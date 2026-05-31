@@ -427,6 +427,8 @@ A derived, denormalized index that explodes the multi-value tag columns into one
 
 Indexed on `(dimension, value)` for fast `GROUP BY` counts and on `document_uri` for rebuild/delete. Only **library** tracks need rows here (inbox tracks are never queried by tag), which keeps it small.
 
+`dimension` is required, not redundant: values are **not** unique across dimensions (e.g. a `Rock` genre and a `rock` label, or an Artist/Album literally named "Jazz" or "Chill" — Artist and Album are uncontrolled user data), so keying on `value` alone would silently merge distinct facets and corrupt the counts in §6.2. Beyond storage, the dimension drives the Queue Editor's per-section grouping, per-dimension color coding, and the OR-within / AND-across filter semantics (§6.2). Store as a small enum.
+
 ---
 
 ## 11. Predefined Tag Lists (MVP)
