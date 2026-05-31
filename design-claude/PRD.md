@@ -75,6 +75,8 @@ App
 
 Queue Editor and Current Queue are both accessible directly from the Play Mode screen (two separate buttons in the action panel).
 
+**Default mode on launch:** When at least one watched folder is configured, the app opens in **Play Mode** by default (following the Play Mode transition rules in §4.1: restored at the persisted queue, or the Queue Editor if the queue is empty). Entering Sort Mode is always an explicit switch that goes through the Sort Order picker (§4.1).
+
 **First launch / no watched folders:** If no watched folder is configured, the app opens directly on the Settings → Watched Folders screen so the user can pick one before anything else. The same applies if all folders are later removed.
 
 ---
@@ -90,7 +92,7 @@ Both Sort Mode and Play Mode use the same Now Playing screen layout. Only the **
 [Sort | Play]   Sorting: 42 tracks            ⟳  ⚙   ← Sort Mode
 [Sort | Play]   Queue: 12 tracks              ⟳  ⚙   ← Play Mode
 ```
-Mode toggle is a segmented button in the top-left. To its right, a title line shows the size of the active list for the current mode (inbox count in Sort Mode, queue track count in Play Mode). A **Settings button (gear icon ⚙) sits in the top-right corner** and opens the Settings screen (§3) from any main screen — this is the entry point to Watched Folders and manual rescan during normal use. This bar is always visible and always shows the current mode.
+Mode toggle is a segmented button in the top-left. To its right, a title line shows the size of the active list for the current mode (tracks remaining in the current sort session in Sort Mode — i.e. the unprocessed remainder of the static queue (§5.1), not the total inbox; queue track count in Play Mode). A **Settings button (gear icon ⚙) sits in the top-right corner** and opens the Settings screen (§3) from any main screen — this is the entry point to Watched Folders and manual rescan during normal use. This bar is always visible and always shows the current mode.
 
 **Scan progress indicator:** While a background reconciliation walk (§8.2) is running, a small spinner (⟳) appears in the top-right corner of this bar, immediately to the left of the Settings gear. It disappears when the walk completes. This is the only surfaced indication of scan activity; the rest of the UI stays fully usable during the walk.
 
@@ -108,7 +110,7 @@ Always shows a Sort Order picker (bottom sheet) before entering the mode. The pi
 - Title, Artist, Album
 - Playback progress bar (scrubable)
 - Current position / total duration
-- Play / Pause, Previous, Next controls
+- Play / Pause, Previous, Next controls (in Sort Mode there is **no Previous** — the sort queue is forward-only (§5.1) — and **Next** acts as **Skip** (§5.2))
 
 **Bottom action panel — Sort Mode:**
 ```
@@ -133,16 +135,16 @@ The inbox feed presents tracks not yet in the Library. Feed order is chosen in t
 
 - **Newest first** — ordered by file modification date descending
 - **Random** — random shuffle of all inbox tracks
-- **Closest to threshold** — tracks ordered by `abs(score)` descending, so tracks nearest either threshold (+2 or −2) come first; negative scores are included. Ties are ordered arbitrarily. (Helps clear the inbox faster.)
+- **Closest to threshold** — tracks ordered by `abs(score)` descending (internally: `max(abs(score))` first), so the most decisively-voted tracks surface first; negative scores are included. Ties are ordered arbitrarily. (Helps clear the inbox faster.)
 
-**Static queue per entry:** The sort queue is built once, when the user enters Sort Mode, from the current inbox in the chosen order. It is **static** for the duration of that entry — it only advances forward (skipped or voted tracks are not reinserted) and is not otherwise reordered, even if scores change mid-session. The top-bar counter decrements as the user progresses through it. A skipped track therefore reappears only on the **next** entry into Sort Mode, when a fresh queue is built. (The Play Mode queue follows the same principle — built on demand, advances forward only — see §6.2.)
+**Static queue per entry:** The sort queue is built once, when the user enters Sort Mode, from the current inbox in the chosen order. It is **static** for the duration of that entry — it only advances forward (skipped or voted tracks are not reinserted) and is not otherwise reordered, even if scores change mid-session. The top-bar counter decrements as the user progresses through it. A skipped track therefore reappears only on the **next** entry into Sort Mode, when a fresh queue is built. When the queue is exhausted (counter reaches 0), **playback stops** and the end-of-queue state is shown (§5.4) — even if the inbox still holds tracks that were skipped this entry; those reappear on the next entry. (The Play Mode queue follows the same principle — built on demand, advances forward only — see §6.2.)
 
 ### 5.2 Voting Behavior
 
 - **−1 tap** → applies −1 and advances immediately to next track; **final** (no window to change it)
-- **+1 tap** → marks the +1 button "selected", plays to end of track, then advances
-- **Skip** → advances immediately, score unchanged
-- **Track ends with no vote** → advances automatically
+- **+1 tap** → marks the +1 button "selected"; the track keeps playing and the vote stays changeable (see below). With no further action it plays to its end and then advances, committing the +1.
+- **Skip / Next** → advances immediately, **committing the pending +1 if one is selected** (otherwise the score is unchanged). The two are equivalent in Sort Mode; there is **no Previous** control (the queue is forward-only, §5.1).
+- **Track ends** → advances automatically, committing the pending +1 if one is selected
 
 **A +1 vote is changeable until the track is left:** After a +1 tap the button is "selected" (visually marked) and the track keeps playing. Until the track advances the user can:
 - Tap **+1** again to deselect it (the +1 is undone; the score returns to what it was at the start of this playback).
@@ -152,7 +154,9 @@ A −1 is never changeable, because it advances immediately. The net effect is t
 
 **Score commit timing:** The session's score change is committed to the DB (`sort_score`, §10.3) when the track is left (i.e. on advance). A −1 commits as the track advances; a +1 commits its final selected/deselected state at advance.
 
-**Crossing +2 while playing:** A +1 tap that brings the score to +2 or higher opens the Tag Sheet immediately — it does not wait for the track to finish. While open, the sheet **covers the bottom action panel**, so the vote for the underlying track cannot be changed while it is up (this removes any ambiguity about voting against an open sheet). The Tag Sheet is bound to the track it was opened for; if playback advances to the next track while the sheet is still open, confirming the sheet applies tags to the **original** track, not the one now playing. Dismissing the sheet without confirming leaves the original track in the inbox at its current score (see §5.3).
+**Crossing +2 while playing:** A +1 tap that brings the score to +2 or higher opens the Tag Sheet immediately — it does not wait for the track to finish. While open, the sheet **covers the bottom action panel**, so the vote for the underlying track cannot be changed while it is up (this removes any ambiguity about voting against an open sheet). The Tag Sheet is bound to the track it was opened for; if playback advances to the next track while the sheet is still open, confirming the sheet applies tags to the **original** track, not the one now playing. Dismissing the sheet without confirming leaves the original track in the inbox.
+
+**The +1 stays changeable after the sheet is dismissed.** Dismissing only closes the sheet; it does not lock the vote. As long as the original track is still playing, the normal §5.2 rule applies — the user can tap **+1** again to deselect it (score returns below +2, so the +2 path is undone) or tap **−1** to replace it (final, advances immediately). The vote is committed only when the track is left. If playback has already advanced past the original track by the time the sheet is dismissed, the +1 was committed on that advance as normal and is no longer changeable.
 
 Score is never displayed on screen. The user votes by feel, not by watching a counter.
 
@@ -181,6 +185,8 @@ If no pattern matches, the whole filename (extension stripped) is placed in Titl
 - **BPM** — numeric value shown as a chip; tap to edit manually
 - **Labels** — freeform chips; tap "＋ Add" to enter text
 
+**Chip sourcing:** The selectable chips offered for Genre, Mood, and Labels are the **superset** of the predefined list (§11, for Genre/Mood) and **every value already present on any Library track** in that dimension. A freeform value entered on one track therefore resurfaces as a tappable chip on later tracks; the "＋ Add" input is only for values not yet in that superset.
+
 **Freeform tag input rule:** Genre, Mood, and Label values accept any printable character — digits, hyphens, ampersands (e.g. `Hip-Hop`, `R&B`) are all permitted. Multiple values within a dimension are stored as a **native ID3v2.4 null-separated (`0x00`) list** in the file, which is the spec's own multi-value mechanism and is read correctly by other players (preserving portability — §1). The null byte cannot occur in user input, so there is no delimiter-collision risk and no character needs to be disallowed.
 
 **Pre-fill logic:** If tracks by the same artist or on the same album already exist in the Library, their Genre, Mood, Pace, and Labels chips are pre-selected. When existing tracks disagree on a value, the **most common** value wins: for the single-select Pace, the most common bucket; for the multi-value Genre / Mood / Labels, each value held by the plurality of the matching tracks is pre-selected. All pre-filled chips are removable — there is no separate accept/reject step.
@@ -189,9 +195,9 @@ If no pattern matches, the whole filename (extension stripped) is placed in Titl
 
 **Confirm action:** Writes all currently selected tags **and the Title / Artist / Album text fields** to the MP3 file, sets `TXXX:STATUS=library`, moves the file to the Library folder if it is not already there (see §8.1), removes track from the inbox feed. Tags are always applied to the track the sheet was opened for, even if playback has since advanced. Until Confirm is pressed the track stays in the inbox.
 
-### 5.4 Empty Inbox State
+### 5.4 Empty Inbox / End-of-Queue State
 
-When the inbox is empty, Sort Mode shows a prompt to rescan or a confirmation that everything has been sorted.
+When the inbox is empty, Sort Mode shows a prompt to rescan or a confirmation that everything has been sorted. The same state is shown when the static sort queue (§5.1) is exhausted but the inbox is not empty (some tracks were skipped this entry): playback stops, and the user can re-enter Sort Mode to build a fresh queue that includes the skipped tracks.
 
 ---
 
@@ -204,8 +210,10 @@ Uses the shared Now Playing layout (§4.1) with the Play Mode bottom action pane
 - Queue ends → playback stops
 - Headphone disconnect → playback pauses
 - Audio focus lost (call, other app) → playback pauses
+- Reconnect / focus regain → **no automatic resume** (follows Android default behavior; the user resumes manually)
 - Android media notification with transport controls
 - Lock screen media session
+- **Queued track removed during a reconciliation walk** (§8.2): if a queued track's file disappears from disk and its DB row is removed mid-session, the **currently playing** track continues to its natural end from the already-open file handle; on advance the player skips any queue entry whose row no longer exists, and such entries are dropped from the queue. No error is surfaced.
 
 ### 6.2 Queue Editor Screen
 
@@ -264,6 +272,7 @@ Colors are applied consistently across the whole app: tag sheet chips, now-playi
 **Active filters row** at the top shows included chips (colored, × to remove) and excluded chips (red with −, × to remove) for quick overview and removal.
 
 **Filter logic:**
+- **No included chips → the whole Library matches.** When no chip is set to *included* (the default empty state, and also the state after a Reset), the result set is **every Library track**. The match counter then reads the full library size and the CTAs operate on the entire Library (e.g. **Shuffle & Play** queues a shuffle of the whole Library). Excluded-only selections narrow this: with no included chips but some excluded, the result is the whole Library minus the excluded tags.
 - Within a dimension: included chips combine as **OR**; excluded chips are always **AND NOT**
 - Across dimensions: included sets combine as **AND** (e.g. (Rock OR Jazz) AND Hype AND NOT Slow)
 - Tags within each dimension are sorted by matching track count, descending
@@ -279,7 +288,7 @@ Colors are applied consistently across the whole app: tag sheet chips, now-playi
 - Presets can be renamed or deleted via long-press
 - **Stale chips:** If a preset references a tag value that no longer matches any track (e.g. a label that has since disappeared from the collection), the chip still loads but shows a count of zero, and a toast/dialog calls out that one or more saved filters no longer match anything.
 
-**CTAs:**
+**CTAs:** All three are **disabled when the match count is 0** (e.g. an excluded-only selection that matches nothing, or an empty Library), so none of them can act on an empty result set.
 - **Shuffle & Play** — replaces current queue with a shuffled set of matching tracks and starts playback
 - **Add to Queue** — appends matching tracks (shuffled) to current queue
 - **Play Next** — inserts matching tracks (shuffled) after the currently playing track
@@ -300,7 +309,7 @@ Colors are applied consistently across the whole app: tag sheet chips, now-playi
 
 ## 7. Tag Editing (Post-Library)
 
-The same Tag Sheet used in Sort Mode is reachable from Play Mode for any Library track (via overflow menu on Now Playing, or via a track detail view). Saving writes tags back to the MP3 file immediately.
+The same Tag Sheet used in Sort Mode is reachable from Play Mode for any Library track (via the overflow menu on Now Playing). Saving writes tags back to the MP3 file immediately.
 
 **Files are never renamed or moved by tag edits.** Changing Title / Artist / Album updates the ID3 fields only; the file keeps its existing path and stays where it is (already in `Library/`). File reorganization based on tags may be introduced later (out of scope for MVP).
 
@@ -322,13 +331,14 @@ On promotion, if the file is **not already under** the watched folder's `Library
 
 Example: `Music/new/artist/track.mp3` → `Music/Library/track.mp3`
 
-If two inbox files share the same filename, the second promotion appends a numeric suffix (`track_2.mp3`).
+If a file being promoted would collide with a name that already exists in the destination `Library/` folder (whether from an earlier promotion or a pre-existing library file), a numeric suffix is appended (`track_2.mp3`, `track_3.mp3`, …) until the name is unique.
 
 ### 8.2 Discovery
 
 - **On app open (background reconciliation walk):** The app renders immediately from the DB's cached state — startup is never blocked on the filesystem. A full walk of all configured watched folders then runs **asynchronously** (background coroutine / WorkManager) and reconciles the DB as it goes: inserting newly found files, updating rows whose `file_mtime` changed, and removing rows for files that no longer exist on disk. UI counts (inbox size, faceted counts) update live as the walk progresses.
+- **Unavailable folder guard:** Before reconciling, the walk verifies each watched folder's SAF tree is actually reachable (mounted and the persisted permission still held). If a folder is unavailable — e.g. its SD card is unmounted — that folder is **skipped entirely** for this walk; its rows are left untouched. Rows are removed **only** for files confirmed absent within a folder that was successfully enumerated. This prevents an unmounted SD card from being misread as a mass deletion (which would otherwise wipe `sort_score` / `bpm_detected` for those tracks). The folder reconciles normally on a later walk once it is reachable again.
 - **Classification:** A newly found MP3's state is classified **by the `TXXX:STATUS` tag only**: `library` if the tag is present and equals `library`, otherwise `inbox` with score 0. Folder location is never used for classification — a file sitting in `Library/` without the tag is treated as inbox, and a tagged file outside `Library/` is treated as library. This ensures already-sorted files (e.g. after a reinstall or DB wipe) are not re-triaged purely on the strength of the embedded tag, keeping the tag as the single source of truth.
-- **Scan cost:** Files already in the DB are matched by `file_path` and skipped unless `file_mtime` changed, so a steady-state walk only pays for the directory enumeration plus ID3 reads of genuinely new files. The directory enumeration (especially over SAF / `DocumentFile`) is the dominant cost, which is why the walk runs off the main thread.
+- **Scan cost:** Files already in the DB are matched by `document_uri` (the primary key, §10.3) and skipped unless `file_mtime` changed, so a steady-state walk only pays for the directory enumeration plus ID3 reads of genuinely new files. The directory enumeration (especially over SAF / `DocumentFile`) is the dominant cost, which is why the walk runs off the main thread.
 - **Manual rescan:** Button in Settings; triggers the same background reconciliation walk.
 - **Live detection:** Out of scope for MVP — files added while the app is open are picked up on the next open or manual rescan, not in real time. (`FileObserver`-based live detection may be added later.)
 
@@ -358,11 +368,11 @@ Android imposes restrictions on SD card write access that vary by OS version:
 
 ## 9. BPM Detection
 
-- Triggered on **first play** of a track (in Sort Mode or otherwise)
-- Runs on a background thread concurrently with playback; does not block or interrupt the listening experience
+- Triggered on the **first play** of an **inbox** track (i.e. in Sort Mode). Detection is **not** run for Library tracks: if a track is promoted before detection finishes (or detection failed), it stays in the Library with no BPM/Pace and detection is never re-triggered — the user can fill them in manually via tag editing (§7). This means there is no BPM write-back path for already-promoted tracks, and that is acceptable.
+- Runs on a background thread concurrently with playback; does not block or interrupt the listening experience. If the track advances (skip/next/vote) before detection completes, detection still **finishes in the background for that track** and the result is stored.
 - Result is stored in the **app DB** (`bpm_detected` column) alongside the sort score — not written to ID3 yet, since the track may still be deleted
 - On promotion to Library (tag sheet confirmed), the cached BPM is written to the `TBPM` ID3 field and `TXXX:PACE` is derived and written at the same time. If detection has not finished by the time the sheet is confirmed, BPM/Pace are left blank and can be filled in later via tag editing — the result is not written retroactively
-- Pace bucket derivation: `slow` < 90 BPM, `medium` 90–140, `fast` > 140 (thresholds TBD)
+- Pace bucket derivation: `slow` < 90 BPM, `medium` 90–140, `fast` > 140 (MVP defaults; adjustable later — §14)
 - Both values are shown as editable chips in the Tag Sheet; user can override either before confirming
 - If detection fails, fields are left empty; user sets manually via tag editing
 
@@ -379,9 +389,11 @@ ID3 tags are the **source of truth** for all metadata — they travel with the f
 | Event | Action |
 |---|---|
 | File discovered on scan | Read ID3 → insert row into `tracks` |
-| App writes tags (Tag Sheet confirm) | Write ID3 → update DB row atomically |
+| App writes tags (Tag Sheet confirm) | Write ID3 to file **first**; on a successful file write, update the DB row (and rebuild `track_tags` in the same DB transaction — §10.3) |
 | App deletes a file | Delete file → remove DB row |
 | App open / manual rescan | Background reconciliation walk; insert missing, update changed (by mtime), remove deleted |
+
+**The file is always the source of truth; the DB is a cache that follows it.** The file write and the DB update cannot be a single atomic operation across the filesystem and Room, so the order is fixed: **write the file, then update the DB.** If the file write fails, the DB is left unchanged. If the file write succeeds but the DB update fails, the cache is briefly stale, but the row's `file_mtime` now differs from disk, so the next reconciliation walk (§8.2) re-reads the file and repairs the cache. The DB is never treated as authoritative over the file.
 
 On any insert/update/delete of a `tracks` row, its `track_tags` rows are rebuilt (or removed) in the **same transaction**, so the index never drifts from the cache.
 
@@ -455,6 +467,7 @@ Slow, Medium, Fast
 - Widgets
 - Configurable score thresholds
 - Tag batch-editing across multiple tracks
+- In-app deletion of Library tracks (only inbox tracks are deletable, via the −2 path in §2.2; a kept track is removed by deleting its file outside the app, picked up on the next reconciliation walk)
 - Export / import of presets
 - Desktop companion app
 
