@@ -27,14 +27,16 @@ Every track lives in one of three states, stored as a custom ID3 frame:
 
 ### 2.2 Sort Score
 
-Each track in the inbox accumulates a score stored in the **app database** (not in ID3 tags):
+Each track in the inbox accumulates a score persisted to the **app database** in the `sort_score` column (§10.3) — never written to ID3. Because it is persisted, a track's score survives app restarts and accumulates across sessions until it reaches a threshold.
 
 - User taps **+1**: score += 1
 - User taps **−1**: score −= 1
 - Score reaches **+2**: tag sheet opens (the track stays in the inbox until tags are confirmed — see §5.3)
 - Score reaches **−2**: track is **immediately and permanently deleted** (no confirmation dialog)
 
-Scores are intentional single taps; no undo is provided. A single playback session contributes at most a net ±1 to the score — the vote stays changeable while the track plays but does not stack (see §5.2) — so reaching −2 requires votes across two separate sessions.
+**Session:** A "session" for a track is a single occasion on which that track is given a score — i.e. the span from when the track begins playing in Sort Mode until it advances to the next track. Each session contributes at most a net ±1 to the persisted score (the vote stays changeable while the track plays but does not stack — see §5.2), so reaching ±2 requires votes across two separate sessions.
+
+Scores are intentional single taps; no undo is provided.
 
 ### 2.3 Tag Schema (ID3v2.4)
 
@@ -47,7 +49,7 @@ Scores are intentional single taps; no undo is provided. A single playback sessi
 | BPM | `TBPM` | Standard | Detected on first play; stored in DB until promotion, then written to file; user-overridable |
 | Mood | `TMOO` | Standard (v2.4) | Predefined list + freeform |
 | Pace bucket | `TXXX:PACE` | Custom | `slow` / `medium` / `fast`; derived from BPM, overridable |
-| Custom labels | `TXXX:LABELS` | Custom | Comma-separated freeform strings |
+| Custom labels | `TXXX:LABELS` | Custom | Multiple values stored as native ID3v2.4 null-separated list |
 | Track status | `TXXX:STATUS` | Custom | `inbox` / `library` |
 
 Artist and Album are exposed as tag dimensions in the Queue Editor (read from standard fields, not duplicated).
@@ -98,8 +100,8 @@ Mode toggle is a segmented button in the top-left. To its right, a title line sh
 Always shows a Sort Order picker (bottom sheet) before entering the mode. The picker pre-selects the last used order. Options: Newest First / Random / Closest to Threshold. Confirming the order begins playback of the first inbox track. If the inbox is empty, the mode is entered with nothing playing and the empty-inbox state is shown (see §5.4). Dismissing the sheet cancels the mode switch and returns to Play Mode.
 
 *Switching to Play Mode:*
-- Queue has tracks and playback is active → go directly to Now Playing
-- Queue is empty or nothing is playing → go directly to Queue Editor
+- Queue has tracks (the persisted queue from §6.3 counts, even if currently paused/stopped) → go directly to Now Playing, restored at the saved track and position
+- Queue is empty → go directly to Queue Editor
 
 **Main content (both modes):**
 - Album art (embedded; placeholder if absent)
@@ -133,6 +135,8 @@ The inbox feed presents tracks not yet in the Library. Feed order is chosen in t
 - **Random** — random shuffle of all inbox tracks
 - **Closest to threshold** — tracks with score nearest to ±2 first (helps clear the inbox faster)
 
+**Static queue per entry:** The sort queue is built once, when the user enters Sort Mode, from the current inbox in the chosen order. It is **static** for the duration of that entry — it only advances forward (skipped or voted tracks are not reinserted) and is not otherwise reordered, even if scores change mid-session. The top-bar counter decrements as the user progresses through it. A skipped track therefore reappears only on the **next** entry into Sort Mode, when a fresh queue is built. (The Play Mode queue follows the same principle — built on demand, advances forward only — see §6.2.)
+
 ### 5.2 Voting Behavior
 
 - **−1 tap** → advances immediately to next track
@@ -161,7 +165,12 @@ Fires as a modal bottom sheet the moment the score reaches +2. The track is **no
 - **Artist** — text field, pre-filled from `TPE1`
 - **Album** — text field, pre-filled from `TALB`
 
-If the file has no `TIT2` / `TPE1` tags, the Title and Artist fields are pre-filled by parsing the filename, which is normally formatted `artist - track_name`. The user can edit any of these before confirming; the edited values are written to the standard ID3 fields on confirm.
+**Filename pre-fill:** If the file has no `TIT2` / `TPE1` tags, the Title and Artist fields are pre-filled by parsing the filename. The extension is stripped first, then the remaining name is matched against an ordered list of known patterns; the first pattern that matches supplies the extracted fields. Examples:
+- `$artist - $track_name`
+- `$artist/$album/$number - $track_name` (using parent folders)
+- `$number - $track_name`
+
+If no pattern matches, the whole filename (extension stripped) is placed in Title and Artist is left blank. The user can edit any field before confirming; the edited values are written to the standard ID3 fields on confirm.
 
 **Tag fields — all shown as chip groups, each chip individually removable:**
 - **Genre** — predefined chips + "＋ Add" freeform input (multi-select)
@@ -170,7 +179,11 @@ If the file has no `TIT2` / `TPE1` tags, the Title and Artist fields are pre-fil
 - **BPM** — numeric value shown as a chip; tap to edit manually
 - **Labels** — freeform chips; tap "＋ Add" to enter text
 
+**Freeform tag input rule:** Genre, Mood, and Label values accept any printable character — digits, hyphens, ampersands (e.g. `Hip-Hop`, `R&B`) are all permitted. Multiple values within a dimension are stored as a **native ID3v2.4 null-separated (`0x00`) list** in the file, which is the spec's own multi-value mechanism and is read correctly by other players (preserving portability — §1). The null byte cannot occur in user input, so there is no delimiter-collision risk and no character needs to be disallowed.
+
 **Pre-fill logic:** If tracks by the same artist or on the same album already exist in the Library, their Genre, Mood, Pace, and Labels chips are pre-selected. When existing tracks disagree on a value, the **most common** value wins: for the single-select Pace, the most common bucket; for the multi-value Genre / Mood / Labels, each value held by the plurality of the matching tracks is pre-selected. All pre-filled chips are removable — there is no separate accept/reject step.
+
+**Required fields for Confirm:** Confirm is disabled until the track has **Title**, **Artist**, and **at least one** other tag from Genre / Mood / Pace / Labels. (Requiring one descriptive tag guarantees the track is reachable in the Queue Editor; without it a promoted track could match no filter.) BPM and Album are optional.
 
 **Confirm action:** Writes all currently selected tags **and the Title / Artist / Album text fields** to the MP3 file, sets `TXXX:STATUS=library`, moves the file to the Library folder if it is not already there (see §8.1), removes track from the inbox feed. Tags are always applied to the track the sheet was opened for, even if playback has since advanced. Until Confirm is pressed the track stays in the inbox.
 
@@ -252,8 +265,8 @@ Colors are applied consistently across the whole app: tag sheet chips, now-playi
 - Within a dimension: included chips combine as **OR**; excluded chips are always **AND NOT**
 - Across dimensions: included sets combine as **AND** (e.g. (Rock OR Jazz) AND Hype AND NOT Slow)
 - Tags within each dimension are sorted by matching track count, descending
-- Tags that would produce zero **included** results are hidden
-- Track count on each chip reflects the count if that chip is toggled to included given the current selection
+- Tags that would produce zero **included** results are hidden — **except** a tag the user has actively set to excluded, which always stays visible so the exclusion can be removed
+- Track count on each chip reflects the count if that chip is toggled to included given the current selection. A chip currently in the **excluded** state shows that same prospective included-count (not its exclusion effect)
 
 **Text filter:** A search/filter input at the top narrows visible chips by name.
 
@@ -262,6 +275,7 @@ Colors are applied consistently across the whole app: tag sheet chips, now-playi
 - Tapping a preset loads its saved chip state instantly
 - "Save current as preset" action available when filters are active
 - Presets can be renamed or deleted via long-press
+- **Stale chips:** If a preset references a tag value that no longer matches any track (e.g. a label that has since disappeared from the collection), the chip still loads but shows a count of zero, and a toast/dialog calls out that one or more saved filters no longer match anything.
 
 **CTAs:**
 - **Shuffle & Play** — replaces current queue with a shuffled set of matching tracks and starts playback
@@ -285,6 +299,8 @@ Colors are applied consistently across the whole app: tag sheet chips, now-playi
 ## 7. Tag Editing (Post-Library)
 
 The same Tag Sheet used in Sort Mode is reachable from Play Mode for any Library track (via overflow menu on Now Playing, or via a track detail view). Saving writes tags back to the MP3 file immediately.
+
+**Files are never renamed or moved by tag edits.** Changing Title / Artist / Album updates the ID3 fields only; the file keeps its existing path and stays where it is (already in `Library/`). File reorganization based on tags may be introduced later (out of scope for MVP).
 
 ---
 
@@ -325,6 +341,8 @@ Android imposes restrictions on SD card write access that vary by OS version:
 **Consequence for Settings:** When the user adds a watched folder, the app uses the SAF folder picker for all folders (internal and SD card) to obtain a persistent `DocumentFile` URI. This URI grants delete permission within the tree, which is required for the −2 deletion path and for moving files on promotion. `DocumentFile.delete()` works reliably on SD card via SAF.
 
 `MANAGE_EXTERNAL_STORAGE` is explicitly avoided — it requires Play Store policy justification and is unnecessary when SAF covers all needed operations.
+
+**Document URIs as identity:** Each track is keyed in the DB by its persisted SAF document URI (§10.3). These URIs are stable for the lifetime of the file at a given path. **Promotion moves a file** (§8.1), which changes its document URI (external-storage document IDs are path-derived); the DB row must therefore be re-keyed to the new URI as part of the move, not left pointing at the old one.
 
 ### 8.4 Permissions
 
@@ -369,18 +387,19 @@ ID3 tags are the **source of truth** for all metadata — they travel with the f
 
 | Column | Source | Notes |
 |---|---|---|
-| `file_path` | disk | Primary key |
+| `document_uri` | SAF | **Primary key.** The persisted SAF `DocumentFile` URI. Stable across the app lifecycle and device reboots while the persisted permission is held and the file is not moved/renamed (see §8.3). |
+| `file_path` | disk | Human-readable path, stored for clarity/display and pattern-based filename parsing; not the key. |
 | `status` | `TXXX:STATUS` | `inbox` / `library`; from the `TXXX:STATUS` tag only — folder location is not used (see §8.2). |
 | `sort_score` | app only | Not written to ID3 |
 | `bpm_detected` | app only | Calculated on first play; written to `TBPM` on promotion |
 | `title` | `TIT2` | |
 | `artist` | `TPE1` | |
 | `album` | `TALB` | |
-| `genre` | `TCON` | Stored as comma-separated if multi-value |
-| `mood` | `TMOO` | |
+| `genre` | `TCON` | Multi-value; in the file stored as native ID3v2.4 null-separated list. In the DB cache stored null-separated (`0x00`) for round-trip fidelity (see §5.3) |
+| `mood` | `TMOO` | Multi-value; null-separated in file and DB cache |
 | `pace` | `TXXX:PACE` | `slow` / `medium` / `fast` |
 | `bpm` | `TBPM` | Integer |
-| `labels` | `TXXX:LABELS` | Comma-separated |
+| `labels` | `TXXX:LABELS` | Multi-value; null-separated in file and DB cache |
 | `date_added` | app | Timestamp of first DB insert |
 | `file_mtime` | disk | Used to detect external changes |
 | `has_art` | ID3 `APIC` presence | Boolean; art itself is not cached in DB |
@@ -443,8 +462,8 @@ Slow, Medium, Fast
 
 - BPM detection library selection and accuracy threshold
 - Pace bucket BPM boundaries (currently 90/140 — adjust after testing)
-- Handling duplicate filenames on promotion (current spec: append numeric suffix)
-- Handling duplicate files (same content, different path)
 - What happens to DB records when a file is moved outside the app
+
+**Duplicate files (MVP behavior):** Duplicate detection is out of scope. Two files with the same content at different paths are treated as entirely separate tracks (separate DB rows, separate states/scores). No de-duplication is attempted.
 
 **Note (intended behavior):** Because classification is by `TXXX:STATUS` tag only (§8.2), a file physically located in `Library/` but missing the tag is treated as inbox. It can therefore be voted down to −2 and permanently deleted, even though it sits in the Library folder. There is no folder-based safety net — this is intentional.
