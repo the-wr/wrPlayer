@@ -34,7 +34,7 @@ Each track in the inbox accumulates a score stored in the **app database** (not 
 - Score reaches **+2**: tag sheet opens (the track stays in the inbox until tags are confirmed — see §5.3)
 - Score reaches **−2**: track is **immediately and permanently deleted** (no confirmation dialog)
 
-Scores are intentional single taps; no undo is provided. Within a single playback session each of the +1 / −1 buttons can be tapped at most once (see §5.2), so reaching −2 requires votes across two separate sessions.
+Scores are intentional single taps; no undo is provided. A single playback session contributes at most a net ±1 to the score — the vote stays changeable while the track plays but does not stack (see §5.2) — so reaching −2 requires votes across two separate sessions.
 
 ### 2.3 Tag Schema (ID3v2.4)
 
@@ -90,6 +90,8 @@ Both Sort Mode and Play Mode use the same Now Playing screen layout. Only the **
 ```
 Mode toggle is a segmented button in the top-left. To its right, a title line shows the size of the active list for the current mode (inbox count in Sort Mode, queue track count in Play Mode). This bar is always visible and always shows the current mode.
 
+**Scan progress indicator:** While a background reconciliation walk (§8.2) is running, a small spinner appears in the top-right corner of this bar. It disappears when the walk completes. This is the only surfaced indication of scan activity; the rest of the UI stays fully usable during the walk.
+
 **Mode transition behavior:**
 
 *Switching to Sort Mode:*
@@ -138,9 +140,13 @@ The inbox feed presents tracks not yet in the Library. Feed order is chosen in t
 - **Skip** → advances immediately, score unchanged
 - **Track ends with no vote** → advances automatically
 
-**One vote per playback session:** When the user taps +1 or −1 for the current track, that button becomes "selected" (visually marked) and both vote buttons are disabled for the remainder of that playback. This prevents accidentally applying multiple votes to the same track in one sitting. The selected/disabled state resets when the track is revisited in a later session.
+**One net vote per playback session (changeable):** When the user taps +1 or −1 for the current track, that button becomes "selected" (visually marked). The buttons are **not** disabled — the user can change their mind during the same playback:
+- Tapping the opposite button switches the vote (the previous ±1 is undone and the new one applied).
+- Tapping the already-selected button deselects it (the vote is undone; the score returns to what it was at the start of this playback).
 
-**+2 threshold while playing:** A +1 tap that brings the score to +2 opens the Tag Sheet immediately — it does not wait for the track to finish. The Tag Sheet is bound to the track it was opened for; if playback advances to the next track while the sheet is still open, confirming the sheet applies tags to the **original** track, not the one now playing.
+The net effect is that a single playback session contributes at most ±1 to the score, but that contribution stays editable until the track is left. The selected state resets when the track is revisited in a later session. (This is why reaching −2 requires votes across two separate sessions — see §2.2.)
+
+**+2 threshold while playing:** A +1 tap that brings the score to +2 opens the Tag Sheet immediately — it does not wait for the track to finish. The Tag Sheet is bound to the track it was opened for; if playback advances to the next track while the sheet is still open, confirming the sheet applies tags to the **original** track, not the one now playing. If the user changes the vote (switches to −1 or deselects) after the sheet has opened but before confirming, dismissing the sheet leaves the track in the inbox at its new, lower score as usual.
 
 Score is never displayed on screen. The user votes by feel, not by watching a counter.
 
@@ -166,7 +172,7 @@ If the file has no `TIT2` / `TPE1` tags, the Title and Artist fields are pre-fil
 
 **Pre-fill logic:** If tracks by the same artist or on the same album already exist in the Library, their Genre, Mood, Pace, and Labels chips are pre-selected. When existing tracks disagree on a value, the **most common** value wins: for the single-select Pace, the most common bucket; for the multi-value Genre / Mood / Labels, each value held by the plurality of the matching tracks is pre-selected. All pre-filled chips are removable — there is no separate accept/reject step.
 
-**Confirm action:** Writes all currently selected tags **and the Title / Artist / Album text fields** to the MP3 file, sets `TXXX:STATUS=library`, moves file to Library folder (see §8.1), removes track from the inbox feed. Tags are always applied to the track the sheet was opened for, even if playback has since advanced. Until Confirm is pressed the track stays in the inbox.
+**Confirm action:** Writes all currently selected tags **and the Title / Artist / Album text fields** to the MP3 file, sets `TXXX:STATUS=library`, moves the file to the Library folder if it is not already there (see §8.1), removes track from the inbox feed. Tags are always applied to the track the sheet was opened for, even if playback has since advanced. Until Confirm is pressed the track stays in the inbox.
 
 ### 5.4 Empty Inbox State
 
@@ -292,7 +298,9 @@ The same Tag Sheet used in Sort Mode is reachable from Play Mode for any Library
 └── Library/          ← app moves files here on +2 promotion
 ```
 
-Any MP3 in the watched folder tree that is not yet in the DB is treated as inbox — the user does not need to put files in a specific subfolder. On promotion, the file is moved to a flat `Library/` directory at the root of the same watched folder, regardless of its original subfolder nesting. The Library folder is created if it does not exist.
+A file's inbox/library state is determined by its `TXXX:STATUS` tag, **not** by which folder it sits in (see §8.2). The `Library/` folder is a convenience destination for promoted files, not a classification mechanism.
+
+On promotion, if the file is **not already under** the watched folder's `Library/` directory, it is moved there — to a flat `Library/` directory at the root of the same watched folder, regardless of its original subfolder nesting. The Library folder is created if it does not exist. If the file is **already under** `Library/`, it stays in place; only its tags are written. (This means re-tagging an existing library track never moves it.)
 
 Example: `Music/new/artist/track.mp3` → `Music/Library/track.mp3`
 
@@ -300,9 +308,11 @@ If two inbox files share the same filename, the second promotion appends a numer
 
 ### 8.2 Discovery
 
-- **On app open:** Full scan of all configured watched folders. Any MP3 not in the DB is added; its state is taken from the file's `TXXX:STATUS` tag — `library` if the tag is present and equals `library`, otherwise `inbox` with score 0. This ensures already-sorted files (e.g. after a reinstall or DB wipe) sitting in the `Library/` folder are not re-triaged.
-- **Manual rescan:** Button in Settings; same behavior as on-open scan.
-- **Live detection:** `FileObserver` monitors watched folders for new files while the app is open. New files are added following the same `TXXX:STATUS` rule above.
+- **On app open (background reconciliation walk):** The app renders immediately from the DB's cached state — startup is never blocked on the filesystem. A full walk of all configured watched folders then runs **asynchronously** (background coroutine / WorkManager) and reconciles the DB as it goes: inserting newly found files, updating rows whose `file_mtime` changed, and removing rows for files that no longer exist on disk. UI counts (inbox size, faceted counts) update live as the walk progresses.
+- **Classification:** A newly found MP3's state is classified **by the `TXXX:STATUS` tag only**: `library` if the tag is present and equals `library`, otherwise `inbox` with score 0. Folder location is never used for classification — a file sitting in `Library/` without the tag is treated as inbox, and a tagged file outside `Library/` is treated as library. This ensures already-sorted files (e.g. after a reinstall or DB wipe) are not re-triaged purely on the strength of the embedded tag, keeping the tag as the single source of truth.
+- **Scan cost:** Files already in the DB are matched by `file_path` and skipped unless `file_mtime` changed, so a steady-state walk only pays for the directory enumeration plus ID3 reads of genuinely new files. The directory enumeration (especially over SAF / `DocumentFile`) is the dominant cost, which is why the walk runs off the main thread.
+- **Manual rescan:** Button in Settings; triggers the same background reconciliation walk.
+- **Live detection:** Out of scope for MVP — files added while the app is open are picked up on the next open or manual rescan, not in real time. (`FileObserver`-based live detection may be added later.)
 
 ### 8.3 SD Card Support and File Deletion
 
@@ -351,8 +361,7 @@ ID3 tags are the **source of truth** for all metadata — they travel with the f
 | File discovered on scan | Read ID3 → insert row into `tracks` |
 | App writes tags (Tag Sheet confirm) | Write ID3 → update DB row atomically |
 | App deletes a file | Delete file → remove DB row |
-| FileObserver detects external file change | Re-read ID3 → update DB row |
-| Manual rescan | Full folder walk; insert missing, update changed (by mtime), remove deleted |
+| App open / manual rescan | Background reconciliation walk; insert missing, update changed (by mtime), remove deleted |
 
 ### 10.3 Schema
 
@@ -361,7 +370,7 @@ ID3 tags are the **source of truth** for all metadata — they travel with the f
 | Column | Source | Notes |
 |---|---|---|
 | `file_path` | disk | Primary key |
-| `status` | `TXXX:STATUS` | `inbox` / `library` |
+| `status` | `TXXX:STATUS` | `inbox` / `library`; from the `TXXX:STATUS` tag only — folder location is not used (see §8.2). |
 | `sort_score` | app only | Not written to ID3 |
 | `bpm_detected` | app only | Calculated on first play; written to `TBPM` on promotion |
 | `title` | `TIT2` | |
@@ -425,7 +434,6 @@ Slow, Medium, Fast
 | ID3 read/write | JAudioTagger |
 | BPM detection | TarsosDSP or BeatDetector library (TBD) |
 | Background work | WorkManager |
-| File watching | FileObserver / ContentObserver |
 | DI | Hilt |
 | Navigation | Compose Navigation |
 
@@ -438,3 +446,5 @@ Slow, Medium, Fast
 - Handling duplicate filenames on promotion (current spec: append numeric suffix)
 - Handling duplicate files (same content, different path)
 - What happens to DB records when a file is moved outside the app
+
+**Note (intended behavior):** Because classification is by `TXXX:STATUS` tag only (§8.2), a file physically located in `Library/` but missing the tag is treated as inbox. It can therefore be voted down to −2 and permanently deleted, even though it sits in the Library folder. There is no folder-based safety net — this is intentional.
