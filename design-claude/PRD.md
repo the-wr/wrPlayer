@@ -31,12 +31,12 @@ Each track in the inbox accumulates a score persisted to the **app database** in
 
 - User taps **+1**: score += 1
 - User taps **−1**: score −= 1
-- Score reaches **+2**: tag sheet opens (the track stays in the inbox until tags are confirmed — see §5.3)
-- Score reaches **−2**: track is **immediately and permanently deleted** (no confirmation dialog)
+- A **+1 vote that brings the score to +2 or higher**: tag sheet opens (the track stays in the inbox until tags are confirmed — see §5.3). If the sheet is dismissed, the track stays at its current score; merely re-entering Sort Mode later does **not** reopen it — the sheet fires again only on the **next +1 vote** (e.g. +2 → +3). There is no upper cap on the score.
+- Score reaches **−2**: track is **immediately and permanently deleted** (no confirmation dialog). Because deletion happens at exactly −2, the score never goes below −2.
 
-**Session:** A "session" for a track is a single occasion on which that track is given a score — i.e. the span from when the track begins playing in Sort Mode until it advances to the next track. Each session contributes at most a net ±1 to the persisted score (the vote stays changeable while the track plays but does not stack — see §5.2), so reaching ±2 requires votes across two separate sessions.
+**Session:** A "session" for a track is a single occasion on which that track is given a score — i.e. the span from when the track begins playing in Sort Mode until it advances to the next track. Each session contributes at most a net ±1 to the persisted score, so reaching ±2 requires votes across two separate sessions. A **+1** vote stays changeable while the track plays (it can be deselected, or replaced by a −1) but does not stack; a **−1** vote advances immediately and is final (see §5.2).
 
-Scores are intentional single taps; no undo is provided.
+A +1 vote is changeable until the track is left; a −1 vote is final. No other undo is provided.
 
 ### 2.3 Tag Schema (ID3v2.4)
 
@@ -87,12 +87,12 @@ Both Sort Mode and Play Mode use the same Now Playing screen layout. Only the **
 
 **Persistent top bar (above all content, both modes):**
 ```
-[Sort | Play]   Sorting: 42 tracks          ← Sort Mode
-[Sort | Play]   Queue: 12 tracks            ← Play Mode
+[Sort | Play]   Sorting: 42 tracks            ⟳  ⚙   ← Sort Mode
+[Sort | Play]   Queue: 12 tracks              ⟳  ⚙   ← Play Mode
 ```
-Mode toggle is a segmented button in the top-left. To its right, a title line shows the size of the active list for the current mode (inbox count in Sort Mode, queue track count in Play Mode). This bar is always visible and always shows the current mode.
+Mode toggle is a segmented button in the top-left. To its right, a title line shows the size of the active list for the current mode (inbox count in Sort Mode, queue track count in Play Mode). A **Settings button (gear icon ⚙) sits in the top-right corner** and opens the Settings screen (§3) from any main screen — this is the entry point to Watched Folders and manual rescan during normal use. This bar is always visible and always shows the current mode.
 
-**Scan progress indicator:** While a background reconciliation walk (§8.2) is running, a small spinner appears in the top-right corner of this bar. It disappears when the walk completes. This is the only surfaced indication of scan activity; the rest of the UI stays fully usable during the walk.
+**Scan progress indicator:** While a background reconciliation walk (§8.2) is running, a small spinner (⟳) appears in the top-right corner of this bar, immediately to the left of the Settings gear. It disappears when the walk completes. This is the only surfaced indication of scan activity; the rest of the UI stays fully usable during the walk.
 
 **Mode transition behavior:**
 
@@ -133,30 +133,32 @@ The inbox feed presents tracks not yet in the Library. Feed order is chosen in t
 
 - **Newest first** — ordered by file modification date descending
 - **Random** — random shuffle of all inbox tracks
-- **Closest to threshold** — tracks with score nearest to ±2 first (helps clear the inbox faster)
+- **Closest to threshold** — tracks ordered by `abs(score)` descending, so tracks nearest either threshold (+2 or −2) come first; negative scores are included. Ties are ordered arbitrarily. (Helps clear the inbox faster.)
 
 **Static queue per entry:** The sort queue is built once, when the user enters Sort Mode, from the current inbox in the chosen order. It is **static** for the duration of that entry — it only advances forward (skipped or voted tracks are not reinserted) and is not otherwise reordered, even if scores change mid-session. The top-bar counter decrements as the user progresses through it. A skipped track therefore reappears only on the **next** entry into Sort Mode, when a fresh queue is built. (The Play Mode queue follows the same principle — built on demand, advances forward only — see §6.2.)
 
 ### 5.2 Voting Behavior
 
-- **−1 tap** → advances immediately to next track
-- **+1 tap** → plays to end of track, then advances
+- **−1 tap** → applies −1 and advances immediately to next track; **final** (no window to change it)
+- **+1 tap** → marks the +1 button "selected", plays to end of track, then advances
 - **Skip** → advances immediately, score unchanged
 - **Track ends with no vote** → advances automatically
 
-**One net vote per playback session (changeable):** When the user taps +1 or −1 for the current track, that button becomes "selected" (visually marked). The buttons are **not** disabled — the user can change their mind during the same playback:
-- Tapping the opposite button switches the vote (the previous ±1 is undone and the new one applied).
-- Tapping the already-selected button deselects it (the vote is undone; the score returns to what it was at the start of this playback).
+**A +1 vote is changeable until the track is left:** After a +1 tap the button is "selected" (visually marked) and the track keeps playing. Until the track advances the user can:
+- Tap **+1** again to deselect it (the +1 is undone; the score returns to what it was at the start of this playback).
+- Tap **−1** to replace it — this casts a −1, which (like any −1) is final and advances immediately.
 
-The net effect is that a single playback session contributes at most ±1 to the score, but that contribution stays editable until the track is left. The selected state resets when the track is revisited in a later session. (This is why reaching −2 requires votes across two separate sessions — see §2.2.)
+A −1 is never changeable, because it advances immediately. The net effect is that a single playback session contributes at most ±1 to the score. The selected state resets when the track is revisited in a later session. (This is why reaching −2 requires a −1 vote in each of two separate sessions — see §2.2.)
 
-**+2 threshold while playing:** A +1 tap that brings the score to +2 opens the Tag Sheet immediately — it does not wait for the track to finish. The Tag Sheet is bound to the track it was opened for; if playback advances to the next track while the sheet is still open, confirming the sheet applies tags to the **original** track, not the one now playing. If the user changes the vote (switches to −1 or deselects) after the sheet has opened but before confirming, dismissing the sheet leaves the track in the inbox at its new, lower score as usual.
+**Score commit timing:** The session's score change is committed to the DB (`sort_score`, §10.3) when the track is left (i.e. on advance). A −1 commits as the track advances; a +1 commits its final selected/deselected state at advance.
+
+**Crossing +2 while playing:** A +1 tap that brings the score to +2 or higher opens the Tag Sheet immediately — it does not wait for the track to finish. While open, the sheet **covers the bottom action panel**, so the vote for the underlying track cannot be changed while it is up (this removes any ambiguity about voting against an open sheet). The Tag Sheet is bound to the track it was opened for; if playback advances to the next track while the sheet is still open, confirming the sheet applies tags to the **original** track, not the one now playing. Dismissing the sheet without confirming leaves the original track in the inbox at its current score (see §5.3).
 
 Score is never displayed on screen. The user votes by feel, not by watching a counter.
 
 ### 5.3 Tag Sheet (on score reaching +2)
 
-Fires as a modal bottom sheet the moment the score reaches +2. The track is **not** moved to Library at this point — it stays in the inbox until the sheet is confirmed (see Confirm action below). If the sheet is dismissed without confirming, the track remains in the inbox at score +2 and will be triaged again on a later pass.
+Fires as a modal bottom sheet the moment a +1 vote brings the score to +2 or higher. The track is **not** moved to Library at this point — it stays in the inbox until the sheet is confirmed (see Confirm action below). If the sheet is dismissed without confirming, the track remains in the inbox at its current score and will be triaged again on a later pass; the sheet does not auto-reopen on later entries — only the **next +1 vote** reopens it (see §2.2).
 
 **BPM detection:** Runs in the background on first play of the track (see §9). By the time a track reaches +2 it has usually been played at least twice, so BPM should already be in the DB when the tag sheet opens. If detection has not finished by the time the sheet opens, BPM and Pace are simply left blank (no spinner, no waiting); the user can fill them in here or later via tag editing.
 
@@ -183,7 +185,7 @@ If no pattern matches, the whole filename (extension stripped) is placed in Titl
 
 **Pre-fill logic:** If tracks by the same artist or on the same album already exist in the Library, their Genre, Mood, Pace, and Labels chips are pre-selected. When existing tracks disagree on a value, the **most common** value wins: for the single-select Pace, the most common bucket; for the multi-value Genre / Mood / Labels, each value held by the plurality of the matching tracks is pre-selected. All pre-filled chips are removable — there is no separate accept/reject step.
 
-**Required fields for Confirm:** Confirm is disabled until the track has **Title**, **Artist**, and **at least one** other tag from Genre / Mood / Pace / Labels. (Requiring one descriptive tag guarantees the track is reachable in the Queue Editor; without it a promoted track could match no filter.) BPM and Album are optional.
+**Required fields for Confirm:** Confirm is disabled until the track has **Title**, **Artist**, and **at least one** other tag from Genre / Mood / Pace / Labels. A **Pace auto-derived from a detected BPM counts** toward this requirement (it makes the track reachable via the Pace filter), so a track with a detected BPM may satisfy Confirm without the user picking any tag manually. (Requiring one descriptive tag guarantees the track is reachable in the Queue Editor; without it a promoted track could match no filter.) BPM and Album are optional.
 
 **Confirm action:** Writes all currently selected tags **and the Title / Artist / Album text fields** to the MP3 file, sets `TXXX:STATUS=library`, moves the file to the Library folder if it is not already there (see §8.1), removes track from the inbox feed. Tags are always applied to the track the sheet was opened for, even if playback has since advanced. Until Confirm is pressed the track stays in the inbox.
 
@@ -370,7 +372,7 @@ Android imposes restrictions on SD card write access that vary by OS version:
 
 ### 10.1 Role
 
-ID3 tags are the **source of truth** for all metadata — they travel with the file and are readable by any player. The DB is a **queryable cache** of that data plus app-only state that has no ID3 equivalent (sort score, queue presets). All UI queries — including the faceted counts in Queue Editor — run against the DB only. Reading ID3 from disk at query time is not acceptable for large collections.
+ID3 tags are the **source of truth** for all metadata — they travel with the file and are readable by any player. The DB is a **queryable cache** of that data plus app-only state that has no ID3 equivalent (sort score, queue presets). All UI queries — including the faceted counts in Queue Editor — run against the DB only. Reading ID3 from disk at query time is not acceptable for large collections. Per-tag faceted counts and the prospective-count logic (§6.2) run against the normalized `track_tags` index (§10.3), not the null-separated blob columns in `tracks`.
 
 ### 10.2 Sync Strategy
 
@@ -380,6 +382,8 @@ ID3 tags are the **source of truth** for all metadata — they travel with the f
 | App writes tags (Tag Sheet confirm) | Write ID3 → update DB row atomically |
 | App deletes a file | Delete file → remove DB row |
 | App open / manual rescan | Background reconciliation walk; insert missing, update changed (by mtime), remove deleted |
+
+On any insert/update/delete of a `tracks` row, its `track_tags` rows are rebuilt (or removed) in the **same transaction**, so the index never drifts from the cache.
 
 ### 10.3 Schema
 
@@ -408,8 +412,20 @@ ID3 tags are the **source of truth** for all metadata — they travel with the f
 
 | Column | Notes |
 |---|---|
-| `name` | User-assigned preset name |
+| `name` | **Primary key.** User-assigned preset name; must be unique. Saving under an existing name overwrites that preset. |
 | `filter_state` | Serialized tag filter (JSON) |
+
+**`track_tags` table** (normalized index for faceted queries)
+
+A derived, denormalized index that explodes the multi-value tag columns into one row per `(track, dimension, value)`. It is **not** a second source of truth — it is rebuilt from the owning `tracks` row whenever that row's tags are inserted or updated, inside the **same transaction**. It exists because the faceted counts and prospective-count logic in the Queue Editor (§6.2) cannot be computed efficiently from the null-separated blob columns in `tracks`.
+
+| Column | Notes |
+|---|---|
+| `document_uri` | FK → `tracks.document_uri` (cascade delete) |
+| `dimension` | `genre` / `mood` / `pace` / `labels` / `artist` / `album` |
+| `value` | A single tag value (one of the null-separated entries, or the single Pace / Artist / Album value) |
+
+Indexed on `(dimension, value)` for fast `GROUP BY` counts and on `document_uri` for rebuild/delete. Only **library** tracks need rows here (inbox tracks are never queried by tag), which keeps it small.
 
 ---
 
