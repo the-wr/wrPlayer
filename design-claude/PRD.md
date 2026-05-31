@@ -31,10 +31,10 @@ Each track in the inbox accumulates a score stored in the **app database** (not 
 
 - User taps **+1**: score += 1
 - User taps **−1**: score −= 1
-- Score reaches **+2**: track moves to Library → tag sheet opens
-- Score reaches **−2**: track is **immediately and permanently deleted**
+- Score reaches **+2**: tag sheet opens (the track stays in the inbox until tags are confirmed — see §5.3)
+- Score reaches **−2**: track is **immediately and permanently deleted** (no confirmation dialog)
 
-Scores are intentional single taps; no undo is provided.
+Scores are intentional single taps; no undo is provided. Within a single playback session each of the +1 / −1 buttons can be tapped at most once (see §5.2), so reaching −2 requires votes across two separate sessions.
 
 ### 2.3 Tag Schema (ID3v2.4)
 
@@ -44,7 +44,7 @@ Scores are intentional single taps; no undo is provided.
 | Artist | `TPE1` | Standard | |
 | Album | `TALB` | Standard | |
 | Genre | `TCON` | Standard | Predefined list + freeform |
-| BPM | `TBPM` | Standard | Auto-detected on promotion to library; user-overridable |
+| BPM | `TBPM` | Standard | Detected on first play; stored in DB until promotion, then written to file; user-overridable |
 | Mood | `TMOO` | Standard (v2.4) | Predefined list + freeform |
 | Pace bucket | `TXXX:PACE` | Custom | `slow` / `medium` / `fast`; derived from BPM, overridable |
 | Custom labels | `TXXX:LABELS` | Custom | Comma-separated freeform strings |
@@ -73,6 +73,8 @@ App
 
 Queue Editor and Current Queue are both accessible directly from the Play Mode screen (two separate buttons in the action panel).
 
+**First launch / no watched folders:** If no watched folder is configured, the app opens directly on the Settings → Watched Folders screen so the user can pick one before anything else. The same applies if all folders are later removed.
+
 ---
 
 ## 4. Shared Now Playing UI
@@ -91,7 +93,7 @@ Mode toggle is a segmented button in the top-left. To its right, a title line sh
 **Mode transition behavior:**
 
 *Switching to Sort Mode:*
-Always shows a Sort Order picker (bottom sheet) before entering the mode. The picker pre-selects the last used order. Options: Newest First / Random / Closest to Threshold. Confirming the order begins playback of the first inbox track. Dismissing the sheet cancels the mode switch and returns to Play Mode.
+Always shows a Sort Order picker (bottom sheet) before entering the mode. The picker pre-selects the last used order. Options: Newest First / Random / Closest to Threshold. Confirming the order begins playback of the first inbox track. If the inbox is empty, the mode is entered with nothing playing and the empty-inbox state is shown (see §5.4). Dismissing the sheet cancels the mode switch and returns to Play Mode.
 
 *Switching to Play Mode:*
 - Queue has tracks and playback is active → go directly to Now Playing
@@ -136,24 +138,35 @@ The inbox feed presents tracks not yet in the Library. Feed order is chosen in t
 - **Skip** → advances immediately, score unchanged
 - **Track ends with no vote** → advances automatically
 
+**One vote per playback session:** When the user taps +1 or −1 for the current track, that button becomes "selected" (visually marked) and both vote buttons are disabled for the remainder of that playback. This prevents accidentally applying multiple votes to the same track in one sitting. The selected/disabled state resets when the track is revisited in a later session.
+
+**+2 threshold while playing:** A +1 tap that brings the score to +2 opens the Tag Sheet immediately — it does not wait for the track to finish. The Tag Sheet is bound to the track it was opened for; if playback advances to the next track while the sheet is still open, confirming the sheet applies tags to the **original** track, not the one now playing.
+
 Score is never displayed on screen. The user votes by feel, not by watching a counter.
 
 ### 5.3 Tag Sheet (on score reaching +2)
 
-Fires as a modal bottom sheet before the track is moved to Library.
+Fires as a modal bottom sheet the moment the score reaches +2. The track is **not** moved to Library at this point — it stays in the inbox until the sheet is confirmed (see Confirm action below). If the sheet is dismissed without confirming, the track remains in the inbox at score +2 and will be triaged again on a later pass.
 
-**BPM detection:** Kicks off when the tag sheet opens (not on import). While detection runs, the Pace and BPM rows show a spinner. When complete, values populate automatically. If the sheet is confirmed before detection finishes, BPM/Pace are left blank and can be edited later.
+**BPM detection:** Runs in the background on first play of the track (see §9). By the time a track reaches +2 it has usually been played at least twice, so BPM should already be in the DB when the tag sheet opens. If detection has not finished by the time the sheet opens, BPM and Pace are simply left blank (no spinner, no waiting); the user can fill them in here or later via tag editing.
+
+**Track details — editable text fields (top of sheet):**
+- **Title** — text field, pre-filled from `TIT2`
+- **Artist** — text field, pre-filled from `TPE1`
+- **Album** — text field, pre-filled from `TALB`
+
+If the file has no `TIT2` / `TPE1` tags, the Title and Artist fields are pre-filled by parsing the filename, which is normally formatted `artist - track_name`. The user can edit any of these before confirming; the edited values are written to the standard ID3 fields on confirm.
 
 **Tag fields — all shown as chip groups, each chip individually removable:**
-- **Genre** — predefined chips + "＋ Add" freeform input
-- **Mood** — predefined chips + "＋ Add" freeform input
+- **Genre** — predefined chips + "＋ Add" freeform input (multi-select)
+- **Mood** — predefined chips + "＋ Add" freeform input (multi-select)
 - **Pace** — `Slow` / `Medium` / `Fast` chips (single-select); auto-set from BPM, tappable to change
 - **BPM** — numeric value shown as a chip; tap to edit manually
 - **Labels** — freeform chips; tap "＋ Add" to enter text
 
-**Pre-fill logic:** If tracks by the same artist or on the same album already exist in the Library, their Genre, Mood, Pace, and Labels chips are pre-selected. All pre-filled chips are removable — there is no separate accept/reject step.
+**Pre-fill logic:** If tracks by the same artist or on the same album already exist in the Library, their Genre, Mood, Pace, and Labels chips are pre-selected. When existing tracks disagree on a value, the **most common** value wins: for the single-select Pace, the most common bucket; for the multi-value Genre / Mood / Labels, each value held by the plurality of the matching tracks is pre-selected. All pre-filled chips are removable — there is no separate accept/reject step.
 
-**Confirm action:** Writes all currently selected tags to the MP3 file, sets `TXXX:STATUS=library`, moves file to Library folder (see §8.1), removes track from inbox feed.
+**Confirm action:** Writes all currently selected tags **and the Title / Artist / Album text fields** to the MP3 file, sets `TXXX:STATUS=library`, moves file to Library folder (see §8.1), removes track from the inbox feed. Tags are always applied to the track the sheet was opened for, even if playback has since advanced. Until Confirm is pressed the track stays in the inbox.
 
 ### 5.4 Empty Inbox State
 
@@ -196,7 +209,7 @@ Active filters: [ Genre: Rock × ]  [ Mood: Hype × ]  [ − Slow × ]
 [ Fast (28) ]  [ Medium (19) ]  [ Slow (4) ]
 
 ──── Labels ───────────────────────────────────────
-[ gym ]  [ commute ]  [ late-night ]  ...
+[ gym (15) ]  [ commute (9) ]  [ late-night (6) ]  ...
 
 ──── Artist ───────────────────────────────────────
 [ Artist A (34) ]  [ Artist B (21) ]  ...
@@ -247,7 +260,7 @@ Colors are applied consistently across the whole app: tag sheet chips, now-playi
 **CTAs:**
 - **Shuffle & Play** — replaces current queue with a shuffled set of matching tracks and starts playback
 - **Add to Queue** — appends matching tracks (shuffled) to current queue
-- **Play Next** — inserts matching tracks after the currently playing track
+- **Play Next** — inserts matching tracks (shuffled) after the currently playing track
 
 ### 6.3 Current Queue Screen
 
@@ -258,6 +271,8 @@ Colors are applied consistently across the whole app: tag sheet chips, now-playi
 - Swipe to remove
 - Tap to jump to that track
 - Currently playing track highlighted
+
+**Persistence:** The current queue (and the playback position within it) persists across app restarts. There is no explicit "clear queue" action — **Shuffle & Play** from the Queue Editor replaces the entire queue each time it is used. An empty queue simply means nothing plays (the same way an empty inbox means Sort Mode plays nothing).
 
 ---
 
@@ -285,9 +300,9 @@ If two inbox files share the same filename, the second promotion appends a numer
 
 ### 8.2 Discovery
 
-- **On app open:** Full scan of all configured watched folders. Any MP3 not in the DB is added as `inbox` with score 0.
+- **On app open:** Full scan of all configured watched folders. Any MP3 not in the DB is added; its state is taken from the file's `TXXX:STATUS` tag — `library` if the tag is present and equals `library`, otherwise `inbox` with score 0. This ensures already-sorted files (e.g. after a reinstall or DB wipe) sitting in the `Library/` folder are not re-triaged.
 - **Manual rescan:** Button in Settings; same behavior as on-open scan.
-- **Live detection:** `FileObserver` monitors watched folders for new files while the app is open. New files are added to inbox immediately.
+- **Live detection:** `FileObserver` monitors watched folders for new files while the app is open. New files are added following the same `TXXX:STATUS` rule above.
 
 ### 8.3 SD Card Support and File Deletion
 
@@ -313,13 +328,13 @@ Android imposes restrictions on SD card write access that vary by OS version:
 
 ## 9. BPM Detection
 
-- Triggered when a track reaches +2 score and the Tag Sheet opens — not on import, to avoid wasting CPU on tracks that may be deleted
-- Runs on a background thread while the Tag Sheet is displayed; Pace and BPM rows show a spinner until complete
-- If the user confirms the Tag Sheet before detection finishes, BPM and Pace are left blank and can be filled via tag editing later
-- Detected BPM is written to `TBPM` ID3 field and cached in DB
-- Pace bucket (`TXXX:PACE`) is derived: `slow` < 90 BPM, `medium` 90–140, `fast` > 140 (thresholds TBD)
-- Both values are shown as editable chips in the Tag Sheet; user can override either
-- If detection fails, fields are left empty; user sets manually
+- Triggered on **first play** of a track (in Sort Mode or otherwise)
+- Runs on a background thread concurrently with playback; does not block or interrupt the listening experience
+- Result is stored in the **app DB** (`bpm_detected` column) alongside the sort score — not written to ID3 yet, since the track may still be deleted
+- On promotion to Library (tag sheet confirmed), the cached BPM is written to the `TBPM` ID3 field and `TXXX:PACE` is derived and written at the same time. If detection has not finished by the time the sheet is confirmed, BPM/Pace are left blank and can be filled in later via tag editing — the result is not written retroactively
+- Pace bucket derivation: `slow` < 90 BPM, `medium` 90–140, `fast` > 140 (thresholds TBD)
+- Both values are shown as editable chips in the Tag Sheet; user can override either before confirming
+- If detection fails, fields are left empty; user sets manually via tag editing
 
 ---
 
@@ -348,6 +363,7 @@ ID3 tags are the **source of truth** for all metadata — they travel with the f
 | `file_path` | disk | Primary key |
 | `status` | `TXXX:STATUS` | `inbox` / `library` |
 | `sort_score` | app only | Not written to ID3 |
+| `bpm_detected` | app only | Calculated on first play; written to `TBPM` on promotion |
 | `title` | `TIT2` | |
 | `artist` | `TPE1` | |
 | `album` | `TALB` | |
