@@ -1,0 +1,16 @@
+package com.wrplayer.data.playback
+
+/** Snapshot of player state exposed to the UI (PRD §4.1). */
+data class PlaybackState(
+    val isConnected: Boolean = false,
+    val isPlaying: Boolean = false,
+    val currentMediaId: String? = null,
+    val title: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+    val positionMs: Long = 0L,
+    val durationMs: Long = 0L,
+    val hasNext: Boolean = false,
+    val hasPrevious: Boolean = false,
+    val queueSize: Int = 0,
+)
