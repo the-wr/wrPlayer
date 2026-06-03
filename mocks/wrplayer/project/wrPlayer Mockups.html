@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>wrPlayer — Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ui-font: 'Hanken Grotesk', system-ui, sans-serif;
+    --mono-font: 'JetBrains Mono', ui-monospace, monospace;
+    --accent: #5b5bd6;
+    --accent-fg: #ffffff;
+  }
+  html[data-theme="light"] {
+    --surface: #f7f6f3;
+    --surface-2: #ffffff;
+    --surface-3: #eeece7;
+    --text: #1b1a18;
+    --text-2: #6b6863;
+    --text-3: #9c988f;
+    --border: #e7e3dc;
+    --device-surface: #f7f6f3;
+    --device-fg: #1b1a18;
+    --device-border: #d9d5ce;
+    --chip-idle-bg: #f0eee9;
+    --chip-idle-fg: #6f6c66;
+    --chip-idle-bd: #e3dfd8;
+    --cover-bg: #ececea;
+    --cover-l1: 0.93;
+    --cover-l2: 0.87;
+    --cover-mark: 0.78;
+  }
+  html[data-theme="dark"] {
+    --surface: #131316;
+    --surface-2: #1b1b1f;
+    --surface-3: #26262b;
+    --text: #f2f1ee;
+    --text-2: #a4a19b;
+    --text-3: #6f6c67;
+    --border: #2a2a30;
+    --device-surface: #131316;
+    --device-fg: #f2f1ee;
+    --device-border: #2c2c32;
+    --chip-idle-bg: #232328;
+    --chip-idle-fg: #a4a19b;
+    --chip-idle-bd: #303036;
+    --cover-bg: #202024;
+    --cover-l1: 0.30;
+    --cover-l2: 0.23;
+    --cover-mark: 0.46;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: var(--ui-font); -webkit-font-smoothing: antialiased; }
+  @keyframes wr-spin { to { transform: rotate(360deg); } }
+  .wr-spin { animation: wr-spin 1.4s linear infinite; transform-origin: 50% 50%; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="android-frame.jsx"></script>
+<script type="text/babel" src="shared.jsx"></script>
+<script type="text/babel" src="queue-shared.jsx"></script>
+<script type="text/babel" src="queue-editor-a.jsx"></script>
+<script type="text/babel" src="queue-editor-b.jsx"></script>
+<script type="text/babel" src="queue-editor-c.jsx"></script>
+<script type="text/babel" src="queue-editor-d.jsx"></script>
+<script type="text/babel" src="queue-editor-e.jsx"></script>
+<script type="text/babel" src="queue-editor-fg.jsx"></script>
+<script type="text/babel" src="now-playing.jsx"></script>
+<script type="text/babel" src="tag-sheet.jsx"></script>
+<script type="text/babel" src="current-queue.jsx"></script>
+<script type="text/babel" src="settings.jsx"></script>
+<script type="text/babel" src="sort-extras.jsx"></script>
+
+<script type="text/babel">
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "dark": false,
+  "scheme": "solid",
+  "accent": "#5b5bd6"
+}/*EDITMODE-END*/;
+
+const CARD = { background: 'transparent', boxShadow: 'none', border: 'none' };
+
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  React.useEffect(() => {
+    const r = document.documentElement;
+    r.dataset.theme = t.dark ? 'dark' : 'light';
+    r.style.setProperty('--accent', t.accent);
+  }, [t.dark, t.accent]);
+
+  const dark = t.dark, scheme = t.scheme;
+
+  return (
+    <React.Fragment>
+      <DesignCanvas>
+        <DCSection id="np" title="Now Playing" subtitle="Shared layout (PRD §4.1) — only the bottom action panel differs by mode">
+          <DCArtboard id="np-sort" label="Sort Mode · idle" width={412} height={892} style={CARD}>
+            <AndroidDevice><SortNowPlaying scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+          <DCArtboard id="np-sort-kept" label="Sort Mode · +1 kept (changeable)" width={412} height={892} style={CARD}>
+            <AndroidDevice><SortNowPlaying scheme={scheme} dark={dark} plusSelected={true} /></AndroidDevice>
+          </DCArtboard>
+          <DCArtboard id="np-play" label="Play Mode · tags + nav" width={412} height={892} style={CARD}>
+            <AndroidDevice><PlayNowPlaying scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="modals" title="Modals & Pickers" subtitle="Bottom sheets over the shared Now Playing screen">
+          <DCArtboard id="m-tag" label="Tag Sheet · score hit +2 (PRD §5.3)" width={412} height={892} style={CARD}>
+            <AndroidDevice><TagSheet scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+          <DCArtboard id="m-order" label="Sort Order picker (PRD §4.1)" width={412} height={892} style={CARD}>
+            <AndroidDevice><SortOrderPicker scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+          <DCArtboard id="m-empty" label="End of queue / empty inbox (PRD §5.4)" width={412} height={892} style={CARD}>
+            <AndroidDevice><SortEmptyState scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="queue-settings" title="Queue & Settings" subtitle="Current Queue (PRD §6.3) and Watched Folders (PRD §3, §8)">
+          <DCArtboard id="cq" label="Current Queue" width={412} height={892} style={CARD}>
+            <AndroidDevice><CurrentQueue scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+          <DCArtboard id="settings" label="Settings · Watched Folders" width={412} height={892} style={CARD}>
+            <AndroidDevice><Settings scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="qe" title="Queue Editor ✓ Selected" subtitle="Chosen direction — back-nav modal, Enqueue label">
+          <DCArtboard id="qe-h" label="H · Selected" width={412} height={892} style={CARD}>
+            <AndroidDevice><QueueEditorH scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+          <DCArtboard id="qe-h-preview" label="H · Preview held (full height)" width={412} height={892} style={CARD}>
+            <AndroidDevice><QueueEditorHPreview scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="qe-drafts" title="Queue Editor — drafts" subtitle="Earlier explorations, superseded by H">
+          <DCArtboard id="qe-a" label="A · Sectioned scroll" width={412} height={892} style={CARD}>
+            <AndroidDevice><QueueEditorA scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+          <DCArtboard id="qe-b" label="B · Dimension rail" width={412} height={892} style={CARD}>
+            <AndroidDevice><QueueEditorB scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+          <DCArtboard id="qe-c" label="C · Expression builder" width={412} height={892} style={CARD}>
+            <AndroidDevice><QueueEditorC scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+          <DCArtboard id="qe-d" label="D · Refined modal" width={412} height={892} style={CARD}>
+            <AndroidDevice><QueueEditorD scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+          <DCArtboard id="qe-e" label="E · Hold-to-preview modal" width={412} height={892} style={CARD}>
+            <AndroidDevice><QueueEditorE scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+          <DCArtboard id="qe-f" label="F · Preview by main CTA" width={412} height={892} style={CARD}>
+            <AndroidDevice><QueueEditorF scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+          <DCArtboard id="qe-g" label="G · Preview by Play Next" width={412} height={892} style={CARD}>
+            <AndroidDevice><QueueEditorG scheme={scheme} dark={dark} /></AndroidDevice>
+          </DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+
+      <TweaksPanel>
+        <TweakSection label="Theme" />
+        <TweakToggle label="Dark mode" value={t.dark} onChange={(v) => setTweak('dark', v)} />
+        <TweakColor label="Accent" value={t.accent}
+          options={['#5b5bd6', '#0e7490', '#b45309', '#1f2937']}
+          onChange={(v) => setTweak('accent', v)} />
+        <TweakSection label="Tag chips" />
+        <TweakRadio label="Color scheme" value={t.scheme}
+          options={['tinted', 'solid', 'outline']}
+          onChange={(v) => setTweak('scheme', v)} />
+      </TweaksPanel>
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

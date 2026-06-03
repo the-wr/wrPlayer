@@ -25,6 +25,14 @@ Kotlin · Jetpack Compose · Media3 (ExoPlayer) · Room · Hilt · WorkManager �
 - AGP 8.7.3, Kotlin 2.0.21, Gradle 8.11.1 (wrapper)
 - ID3 tags are the source of truth; the Room DB is a queryable cache that follows the file (PRD §10).
 
+### UI design (mocks)
+`mocks/wrplayer/` is a **Claude Design handoff bundle** — the visual source of truth for the UI. The prototypes are HTML/CSS/JS (`.jsx`); recreate them **pixel-perfectly in Compose**, matching the visual output, not the prototype's internal structure. Read `mocks/wrplayer/README.md` first.
+
+- **Entry point:** `mocks/wrplayer/project/wrPlayer Mockups.html` — read it in full and follow its imports before implementing a screen. Don't render it in a browser; read the source. `screenshots/` has rendered references.
+- **Design system:** `project/shared.jsx` defines the per-dimension palette (PRD §6.2) as OKLCH hues — Genre 256, Mood 305, Pace 152, Labels 58, Artist 196, Album 88 — plus `chipStyle()` (idle/included/excluded states). Use these exact hues so chip colors stay consistent across tag sheet, now-playing, and queue editor. `android-frame.jsx` is the Material 3 device frame (not app UI).
+- **Screen → PRD mapping:** `now-playing.jsx` (§4.1 shared Sort/Play), `tag-sheet.jsx` (§5.3), `sort-extras.jsx` (§5.4 empty/end states), `queue-editor-*.jsx` (§6.2), `current-queue.jsx` (§6.3), `settings.jsx` (§3/§8).
+- **Queue Editor variant:** build **variant H** (decided). Defined in `queue-editor-fg.jsx` as `QueueEditorH` (+ `QueueEditorHPreview` for the held/expanded preview state); reference screenshots `variant-h/-h2/-h3`. H is the refined G: modal dismissed by back-nav (no in-modal close button), no redundant exclude dash, "Enqueue" CTA label, no grabber. Ignore the other `queue-editor-a` … `-g` variants.
+
 ### Build environment (Windows)
 - **JDK 21 is required and is pinned** in [android/gradle.properties](android/gradle.properties) via `org.gradle.java.home` → Android Studio's bundled JBR (`C:/Program Files/Android/Android Studio1/jbr`). The machine's default `JAVA_HOME`/`java` is JDK 25, which AGP does **not** support — do not rely on it. If that JBR path moves, update `gradle.properties`.
 - Android SDK at `C:\SDK\Android` (`ANDROID_HOME`); referenced by `android/local.properties` (`sdk.dir`, git-ignored).
