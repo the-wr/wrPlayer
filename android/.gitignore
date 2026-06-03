@@ -1,0 +1,28 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+captures/
+.navigation/
+
+# Local config (machine-specific SDK path, signing, etc.)
+local.properties
+
+# NDK
+.externalNativeBuild/
+.cxx/
+
+# Build outputs / logs
+*.apk
+*.aab
+*.ap_
+*.dex
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
