@@ -55,6 +55,31 @@ class PlayerConnection @Inject constructor(
         c.play()
     }
 
+    /** Append items to the end of the current queue (PRD §6.2 "Add to Queue" / "Enqueue"). */
+    fun addToQueue(items: List<MediaItem>) {
+        val c = controller ?: return
+        if (items.isEmpty()) return
+        c.addMediaItems(items)
+        c.prepare()
+    }
+
+    /** Insert items immediately after the currently playing track (PRD §6.2 "Play Next"). */
+    fun playNext(items: List<MediaItem>) {
+        val c = controller ?: return
+        if (items.isEmpty()) return
+        val at = if (c.mediaItemCount == 0) 0 else c.currentMediaItemIndex + 1
+        c.addMediaItems(at, items)
+        c.prepare()
+    }
+
+    /** Document URIs of the current queue, in order (for persistence, §6.3). */
+    fun queueMediaIds(): List<String> {
+        val c = controller ?: return emptyList()
+        return (0 until c.mediaItemCount).mapNotNull { c.getMediaItemAt(it).mediaId }
+    }
+
+    fun currentIndex(): Int = controller?.currentMediaItemIndex ?: 0
+
     fun playPause() {
         val c = controller ?: return
         if (c.isPlaying) c.pause() else c.play()

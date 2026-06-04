@@ -49,6 +49,9 @@ interface TrackDao {
     @Query("SELECT * FROM tracks")
     suspend fun getAll(): List<TrackEntity>
 
+    @Query("SELECT * FROM tracks WHERE document_uri IN (:uris)")
+    suspend fun getByUris(uris: List<String>): List<TrackEntity>
+
     @Query("SELECT * FROM tracks WHERE status = :status")
     suspend fun getByStatus(status: String): List<TrackEntity>
 

@@ -217,7 +217,7 @@ private fun PaceSection(pace: String?, bpm: Int?, onSetPace: (String?) -> Unit, 
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Pace.entries.forEach { p ->
                 val selected = pace == p.key
-                SelectableTagChip(p.key.replaceFirstChar { it.uppercase() }, TagDimension.PACE, selected) {
+                SelectableTagChip(p.key, TagDimension.PACE, selected) {
                     onSetPace(if (selected) null else p.key)
                 }
             }

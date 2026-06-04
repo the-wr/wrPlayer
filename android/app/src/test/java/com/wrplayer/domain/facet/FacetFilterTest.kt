@@ -125,4 +125,34 @@ class FacetFilterTest {
         val counts = genre.map { it.count }
         assertThat(counts).isInOrder(Comparator.reverseOrder<Int>())
     }
+
+    @Test
+    fun matchCount_zero_forImpossibleSelection() {
+        // No track is both Jazz and Electronic → CTAs disable (PRD §6.2).
+        val f = included(TagDimension.GENRE to setOf("Jazz")).withIncluded(TagDimension.MOOD to "Nope")
+        assertThat(FacetFilter.matchCount(library, f)).isEqualTo(0)
+    }
+
+    @Test
+    fun staleSelections_flagsValuesThatNoLongerMatch() {
+        // "gym" was saved in a preset but no library track carries it now → stale.
+        val f = included(TagDimension.GENRE to setOf("Rock")).copy(
+            included = mapOf(
+                TagDimension.GENRE to setOf("Rock"),
+                TagDimension.LABELS to setOf("gym"),
+            ),
+        )
+        val stale = FacetFilter.staleSelections(library, f)
+        assertThat(stale[TagDimension.LABELS]).containsExactly("gym")
+        assertThat(stale).doesNotContainKey(TagDimension.GENRE)
+    }
+
+    @Test
+    fun staleSelections_emptyWhenAllValuesPresent() {
+        val f = included(TagDimension.GENRE to setOf("Rock"))
+        assertThat(FacetFilter.staleSelections(library, f)).isEmpty()
+    }
+
+    private fun FilterState.withIncluded(pair: Pair<TagDimension, String>) =
+        withIncluded(pair.first, pair.second)
 }

@@ -10,6 +10,9 @@
 
 ## Project: wrPlayer
 
+> **Build in progress.** Read [HANDOFF.md](HANDOFF.md) first — it has current phase status
+> (Phases 0–8 done, Phase 9 next), the build/run/test workflow, architecture map, and what remains.
+
 Local Android music player for large, growing MP3 collections. Spec: [design-claude/PRD.md](design-claude/PRD.md) (single source of truth for requirements). MVP scope; MP3 only.
 
 ### Layout

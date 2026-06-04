@@ -67,6 +67,28 @@ object FacetFilter {
         return result
     }
 
+    /**
+     * Selected values in [filter] (included or excluded) that no longer match any track — i.e. their
+     * prospective included-count is zero (PRD §6.2 "stale chips"). Used to surface the stale-preset
+     * toast after loading a saved preset. Returned per dimension; only non-empty dimensions appear.
+     */
+    fun staleSelections(
+        tracks: List<LibraryTrackTags>,
+        filter: FilterState,
+    ): Map<TagDimension, Set<String>> {
+        val result = LinkedHashMap<TagDimension, Set<String>>()
+        for (dimension in TagDimension.entries) {
+            val selected = filter.included[dimension].orEmpty() + filter.excluded[dimension].orEmpty()
+            // A value is stale if, on its own, it matches no track — independent of the rest of the
+            // selection (PRD §6.2: a saved value that "no longer matches any track").
+            val stale = selected.filterTo(mutableSetOf()) { value ->
+                matchCount(tracks, FilterState().withIncluded(dimension, value)) == 0
+            }
+            if (stale.isNotEmpty()) result[dimension] = stale
+        }
+        return result
+    }
+
     /** Every value present in [dimension], plus any value the filter currently excludes there. */
     private fun candidateValues(
         tracks: List<LibraryTrackTags>,
