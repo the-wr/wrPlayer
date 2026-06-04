@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import dagger.hilt.android.AndroidEntryPoint
-import com.wrplayer.ui.debug.DesignGalleryScreen
+import com.wrplayer.ui.debug.SortModeDemo
 import com.wrplayer.ui.theme.WrPlayerTheme
 
 @AndroidEntryPoint
@@ -20,8 +20,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             WrPlayerTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    // TEMPORARY Phase 6 design-system gallery for sign-off; replaced by the nav shell in Phase 8.
-                    DesignGalleryScreen(modifier = Modifier.padding(innerPadding))
+                    // TEMPORARY Phase 8 Sort Mode preview; replaced by the nav shell wiring.
+                    SortModeDemo(modifier = Modifier.padding(innerPadding))
                 }
             }
         }
