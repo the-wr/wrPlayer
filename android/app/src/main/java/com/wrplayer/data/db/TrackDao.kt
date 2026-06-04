@@ -52,6 +52,21 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE status = :status")
     suspend fun getByStatus(status: String): List<TrackEntity>
 
+    @Query("SELECT * FROM tracks WHERE status = 'inbox'")
+    suspend fun getInbox(): List<TrackEntity>
+
+    @Query("UPDATE tracks SET sort_score = :score WHERE document_uri = :uri")
+    suspend fun updateScore(uri: String, score: Int)
+
+    @Query("UPDATE tracks SET bpm_detected = :bpm WHERE document_uri = :uri")
+    suspend fun updateBpmDetected(uri: String, bpm: Int)
+
+    @Query("SELECT DISTINCT value FROM track_tags WHERE dimension = :dimension")
+    suspend fun distinctTagValues(dimension: String): List<String>
+
+    @Query("SELECT * FROM tracks WHERE status = 'library' AND (artist = :artist OR album = :album)")
+    suspend fun matchingLibraryTracks(artist: String?, album: String?): List<TrackEntity>
+
     @Query("SELECT COUNT(*) FROM tracks WHERE status = 'inbox'")
     fun observeInboxCount(): Flow<Int>
 

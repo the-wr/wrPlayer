@@ -4,6 +4,7 @@ package com.wrplayer.data.playback
 data class PlaybackState(
     val isConnected: Boolean = false,
     val isPlaying: Boolean = false,
+    val isEnded: Boolean = false,
     val currentMediaId: String? = null,
     val title: String? = null,
     val artist: String? = null,

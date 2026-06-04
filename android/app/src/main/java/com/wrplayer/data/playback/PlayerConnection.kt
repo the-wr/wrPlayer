@@ -77,6 +77,7 @@ class PlayerConnection @Inject constructor(
         _state.value = PlaybackState(
             isConnected = true,
             isPlaying = c.isPlaying,
+            isEnded = c.playbackState == Player.STATE_ENDED,
             currentMediaId = c.currentMediaItem?.mediaId,
             title = meta?.title?.toString(),
             artist = meta?.artist?.toString(),
