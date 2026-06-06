@@ -43,6 +43,7 @@ data class SortUiState(
     val pickerOrder: SortOrder = SortOrder.NEWEST_FIRST,
     val emptyInbox: Boolean = false,
     val tagSheet: TagSheetState? = null,
+    val scanning: Boolean = false,
 )
 
 /**
@@ -59,6 +60,7 @@ class SortViewModel @Inject constructor(
     private val bpmDetector: BpmDetector,
     private val prefs: AppPreferences,
     private val tagSheetLoader: TagSheetLoader,
+    private val scanStatus: com.wrplayer.data.scan.ScanStatus,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SortUiState())
@@ -74,6 +76,9 @@ class SortViewModel @Inject constructor(
 
     init {
         player.connect()
+        viewModelScope.launch {
+            scanStatus.isScanning.collect { s -> _state.update { it.copy(scanning = s) } }
+        }
         viewModelScope.launch {
             player.state.collect { ps ->
                 _state.value.nowPlaying?.let { np ->

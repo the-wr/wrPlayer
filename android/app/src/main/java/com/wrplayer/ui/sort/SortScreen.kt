@@ -49,7 +49,7 @@ fun SortScreen(
     val colors = WrTheme.colors
 
     val topBar: @Composable () -> Unit = {
-        WrTopBar(AppMode.SORT, state.remaining, scanning = false, onModeChange = onModeChange, onOpenSettings = onOpenSettings)
+        WrTopBar(AppMode.SORT, state.remaining, scanning = state.scanning, onModeChange = onModeChange, onOpenSettings = onOpenSettings)
     }
 
     Box(Modifier.fillMaxSize().background(colors.surface)) {

@@ -7,8 +7,8 @@ roadmap in `C:\Users\Wr\.claude\plans\create-a-plan-to-jolly-squirrel.md`, the s
 ## TL;DR — where we are
 
 Building wrPlayer (local Android MP3 player, Sort + Play modes) phase-by-phase with verification
-gates. **Phases 0–8 are done, committed, and verified. Phase 9 is built and verified live on device
-(awaiting visual sign-off, not yet committed). Phase 10 is next.**
+gates. **Phases 0–8 are done, committed, and verified. Phases 9 and 10 are built and verified live
+on device (awaiting visual sign-off, not yet committed). Phase 11 is next.**
 
 - **The app runs end-to-end in Sort Mode today**: empty-inbox → seed/picker → queue → playback →
   +1/−1 voting, all live on the Pixel_9 emulator.
@@ -118,11 +118,15 @@ DB, with `track_tags` rebuilt in the same transaction). Hilt throughout; `@HiltV
 - `ui/nowplaying/PlayPanel`, `ui/play/PlayViewModel` + `PlayScreen` (Now Playing + panel + QueueEditor/CurrentQueue overlays + Edit→TagSheet via `repo.editTags`); `WrApp` PLAY branch → `PlayScreen`. CurrentQueue is a Phase-10 placeholder.
 - **Open visual nits for sign-off:** Pace chip renders the stored key lowercase ("medium") vs mock "Medium" — decide whether to title-case pace display. Hold-to-preview overlay lists matching tracks (cover placeholder + title/artist), no per-row duration (we don't cache duration).
 
-### Phase 10 — Current Queue + Settings + persistence  🔔 visual sign-off
-- `CurrentQueueScreen` (`current-queue.jsx`): drag-reorder, swipe-remove, tap-to-jump, now-playing highlight (needs `PlayerConnection` queue read + `moveMediaItem`/`removeMediaItem`/`seekTo(index,0)`).
-- `SettingsScreen` + `WatchedFoldersScreen` (`settings.jsx`): SAF picker (`ACTION_OPEN_DOCUMENT_TREE` → `SafTreeManager.persist`), folder list/remove, manual rescan (`ScanTrigger.requestScan`), theme + accent (persist in `AppPreferences`; `WrPlayerTheme` currently hardcodes accent `#5b5bd6` — make it read prefs). First-launch routing to Watched Folders when no folder (§3) via `DefaultMode`.
-- **This is where real SAF gets exercised end-to-end** (add folder → scan → inbox populated → Sort Mode for real, replacing the seed hack).
-- Persistence: save queue+index+position on change, restore on launch in Play Mode.
+### Phase 10 notes (built — pending visual sign-off)
+**Verified live on device:** first-launch routing → Settings; SAF folder picker → add `Music` → "1 active"; live scan spinner ("Scanning…"); scan populated the inbox (Sort picker read "3 tracks" from the SAF folder); queue persistence restored on launch (paused); Current Queue renders to the mock (now-playing highlight + grip + mini footer). **Real SAF is now exercised end-to-end** (add folder → scan → inbox), so the seed hack is only a fallback.
+- `data/playback`: `PlaybackState` gained `currentIndex` + `queue: List<QueueTrack>`; `PlayerConnection` gained `restoreQueue`/`moveItem`/`removeItem`/`seekToItem` and emits the queue list in `pushState`.
+- `ui/play/CurrentQueueScreen` (`current-queue.jsx`): tap-to-jump, grip drag-reorder (live single-step `moveItem`), swipe-to-remove (Animatable offset), now-playing highlight + mini footer. Wired into `PlayScreen` (replaces the placeholder).
+- `ui/play/PlayViewModel`: persists queue+index on each player event and position every ~3s; restores the persisted queue once on first connect when the player is empty (paused). Exposes queue/currentIndex.
+- `ui/settings/SettingsScreen` + `SettingsViewModel` (`settings.jsx`): persisted-tree list with name/path/INTERNAL|SD badge/availability, SAF picker via `rememberLauncherForActivityResult(OpenDocumentTree)` → `SafTreeManager.persist` + rescan, per-folder remove (`release` + rescan), manual "Rescan now". **Theme/accent customization deliberately omitted** — not in the mock or PRD; `settings.jsx` is Watched-Folders-only. `WrPlayerTheme` still reads the hardcoded accent (fine; revisit only if a theme picker is ever specced).
+- `data/scan/ScanStatus` (@Singleton, WorkManager `getWorkInfosForUniqueWorkFlow`) drives the top-bar scan spinner in Sort + Play.
+- `ui/AppShellViewModel` + rewritten `WrApp`: resolves the launch route via `DefaultMode` (no folders → Settings overlay; else Play), kicks the on-open reconcile walk, hosts the Settings overlay (gear / back-dismiss).
+- **Open visual nits for sign-off:** drag-reorder is a live single-step move (finger doesn't pixel-track the row); no per-row duration in the queue rows (we don't cache duration); removing a watched folder leaves its tracks' rows until they're confirmed-absent under a *reachable* tree (orphan rows possible — acceptable per §8.2 guard, revisit in Phase 11 if undesired).
 
 ### Phase 11 — Integration hardening
 - Full loop on device; edge cases: unmounted/empty-folder guard, external-edit preserved across scan, queued-track-removed-mid-play skip (§6.1). `assembleRelease` builds.

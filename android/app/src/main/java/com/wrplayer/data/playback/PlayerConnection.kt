@@ -85,9 +85,31 @@ class PlayerConnection @Inject constructor(
         if (c.isPlaying) c.pause() else c.play()
     }
 
+    /** Restore a persisted queue without starting playback (PRD §4.1 / §6.3): prepared but paused. */
+    fun restoreQueue(items: List<MediaItem>, startIndex: Int, positionMs: Long) {
+        val c = controller ?: return
+        if (items.isEmpty()) return
+        val index = startIndex.coerceIn(0, items.lastIndex)
+        c.setMediaItems(items, index, positionMs)
+        c.prepare()
+    }
+
     fun next() { controller?.seekToNextMediaItem() }
     fun previous() { controller?.seekToPreviousMediaItem() }
     fun seekTo(positionMs: Long) { controller?.seekTo(positionMs) }
+
+    /** Reorder the queue (drag-to-reorder, PRD §6.3). */
+    fun moveItem(from: Int, to: Int) { controller?.moveMediaItem(from, to) }
+
+    /** Remove a queued track (swipe-to-remove, PRD §6.3). */
+    fun removeItem(index: Int) { controller?.removeMediaItem(index) }
+
+    /** Jump to and play a queued track (tap-to-jump, PRD §6.3). */
+    fun seekToItem(index: Int) {
+        val c = controller ?: return
+        c.seekTo(index, 0L)
+        c.play()
+    }
 
     /** Current position for smooth progress updates (the listener only fires on discrete events). */
     fun currentPositionMs(): Long = controller?.currentPosition ?: 0L
@@ -99,11 +121,20 @@ class PlayerConnection @Inject constructor(
             return
         }
         val meta = c.currentMediaItem?.mediaMetadata
+        val queue = (0 until c.mediaItemCount).map { i ->
+            val item = c.getMediaItemAt(i)
+            QueueTrack(
+                mediaId = item.mediaId,
+                title = item.mediaMetadata.title?.toString().orEmpty(),
+                artist = item.mediaMetadata.artist?.toString().orEmpty(),
+            )
+        }
         _state.value = PlaybackState(
             isConnected = true,
             isPlaying = c.isPlaying,
             isEnded = c.playbackState == Player.STATE_ENDED,
             currentMediaId = c.currentMediaItem?.mediaId,
+            currentIndex = c.currentMediaItemIndex,
             title = meta?.title?.toString(),
             artist = meta?.artist?.toString(),
             album = meta?.albumTitle?.toString(),
@@ -112,6 +143,7 @@ class PlayerConnection @Inject constructor(
             hasNext = c.hasNextMediaItem(),
             hasPrevious = c.hasPreviousMediaItem(),
             queueSize = c.mediaItemCount,
+            queue = queue,
         )
     }
 }

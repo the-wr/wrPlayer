@@ -6,6 +6,8 @@ import com.wrplayer.data.db.TrackDao
 import com.wrplayer.data.db.TrackEntity
 import com.wrplayer.data.db.splitMultiValue
 import com.wrplayer.data.playback.PlayerConnection
+import com.wrplayer.data.playback.QueueTrack
+import com.wrplayer.data.playback.toMediaItem
 import com.wrplayer.data.prefs.AppPreferences
 import com.wrplayer.data.repo.TrackRepository
 import com.wrplayer.domain.model.TagDimension
@@ -26,7 +28,10 @@ data class PlayUiState(
     val nowPlaying: NowPlayingUi? = null,
     val tags: List<Pair<TagDimension, String>> = emptyList(),
     val queueCount: Int = 0,
+    val queue: List<QueueTrack> = emptyList(),
+    val currentIndex: Int = 0,
     val tagSheet: TagSheetState? = null,
+    val scanning: Boolean = false,
 )
 
 /**
@@ -40,6 +45,7 @@ class PlayViewModel @Inject constructor(
     private val prefs: AppPreferences,
     private val tagSheetLoader: TagSheetLoader,
     private val repository: TrackRepository,
+    private val scanStatus: com.wrplayer.data.scan.ScanStatus,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(PlayUiState())
@@ -47,14 +53,22 @@ class PlayViewModel @Inject constructor(
 
     private var currentUri: String? = null
     private var editUri: String? = null
+    private var restoreAttempted = false
+    private var positionSaveTick = 0
 
     init {
         player.connect()
         viewModelScope.launch {
+            scanStatus.isScanning.collect { s -> _state.update { it.copy(scanning = s) } }
+        }
+        viewModelScope.launch {
             player.state.collect { ps ->
+                maybeRestoreQueue(ps)
                 _state.update {
                     it.copy(
                         queueCount = ps.queueSize,
+                        queue = ps.queue,
+                        currentIndex = ps.currentIndex,
                         nowPlaying = ps.currentMediaId?.let { _ ->
                             NowPlayingUi(
                                 title = ps.title.orEmpty(),
@@ -72,6 +86,11 @@ class PlayViewModel @Inject constructor(
                     currentUri = ps.currentMediaId
                     loadTags(ps.currentMediaId)
                 }
+                // Persist queue structure + index on every player event (§6.3).
+                if (ps.queueSize > 0) {
+                    prefs.queueUris = ps.queue.map { it.mediaId }
+                    prefs.queueIndex = ps.currentIndex
+                }
             }
         }
         viewModelScope.launch {
@@ -80,6 +99,25 @@ class PlayViewModel @Inject constructor(
                 _state.value.nowPlaying?.let { np ->
                     _state.update { it.copy(nowPlaying = np.copy(positionMs = player.currentPositionMs())) }
                 }
+                // Persist play position roughly every 3s so a restart resumes near where it left off.
+                if (++positionSaveTick % 6 == 0 && _state.value.queueCount > 0) {
+                    prefs.queuePositionMs = player.currentPositionMs()
+                }
+            }
+        }
+    }
+
+    /** Restore the persisted queue once, on first connect, if the player is empty (PRD §4.1 / §6.3). */
+    private fun maybeRestoreQueue(ps: com.wrplayer.data.playback.PlaybackState) {
+        if (restoreAttempted || !ps.isConnected || ps.queueSize > 0) return
+        restoreAttempted = true
+        val uris = prefs.queueUris
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val byUri = trackDao.getByUris(uris).associateBy { it.documentUri }
+            val items = uris.mapNotNull { byUri[it]?.toMediaItem() }
+            if (items.isNotEmpty()) {
+                player.restoreQueue(items, prefs.queueIndex.coerceIn(0, items.lastIndex), prefs.queuePositionMs)
             }
         }
     }
@@ -98,6 +136,11 @@ class PlayViewModel @Inject constructor(
     fun onPlayPause() = player.playPause()
     fun onNext() = player.next()
     fun onPrevious() = player.previous()
+
+    // ---- Current Queue ----
+    fun onJump(index: Int) = player.seekToItem(index)
+    fun onMove(from: Int, to: Int) = player.moveItem(from, to)
+    fun onRemove(index: Int) = player.removeItem(index)
 
     fun onSeekFraction(fraction: Float) {
         val dur = _state.value.nowPlaying?.durationMs ?: return

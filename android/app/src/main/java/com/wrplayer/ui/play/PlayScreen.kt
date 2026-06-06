@@ -1,6 +1,5 @@
 package com.wrplayer.ui.play
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,7 +54,7 @@ fun PlayScreen(
     var overlay by remember { mutableStateOf(PlayOverlay.NONE) }
 
     val topBar: @Composable () -> Unit = {
-        WrTopBar(AppMode.PLAY, state.queueCount, scanning = false, onModeChange = onModeChange, onOpenSettings = onOpenSettings)
+        WrTopBar(AppMode.PLAY, state.queueCount, scanning = state.scanning, onModeChange = onModeChange, onOpenSettings = onOpenSettings)
     }
 
     Box(Modifier.fillMaxSize().background(colors.surface)) {
@@ -85,7 +84,19 @@ fun PlayScreen(
             PlayOverlay.QUEUE_EDITOR ->
                 QueueEditorScreen(onDismiss = { overlay = PlayOverlay.NONE }, onPlaybackStarted = { overlay = PlayOverlay.NONE })
             PlayOverlay.CURRENT_QUEUE ->
-                CurrentQueuePlaceholder(onDismiss = { overlay = PlayOverlay.NONE })
+                CurrentQueueScreen(
+                    queue = state.queue,
+                    currentIndex = state.currentIndex,
+                    isPlaying = np?.isPlaying == true,
+                    scanning = state.scanning,
+                    onModeChange = onModeChange,
+                    onOpenSettings = onOpenSettings,
+                    onJump = viewModel::onJump,
+                    onMove = viewModel::onMove,
+                    onRemove = viewModel::onRemove,
+                    onPlayPause = viewModel::onPlayPause,
+                    onDismiss = { overlay = PlayOverlay.NONE },
+                )
             PlayOverlay.NONE -> {}
         }
 
@@ -120,18 +131,6 @@ private fun EmptyQueueState(topBar: @Composable () -> Unit, onOpenQueueEditor: (
                 contentAlignment = Alignment.Center,
             ) { Text("Open Queue Editor", color = colors.accentFg, fontSize = 15.sp, fontWeight = FontWeight(700)) }
         }
-    }
-}
-
-/** Placeholder for the Current Queue screen (built in Phase 10); dismissed by back-nav. */
-@Composable
-private fun CurrentQueuePlaceholder(onDismiss: () -> Unit) {
-    val colors = WrTheme.colors
-    BackHandler { onDismiss() }
-    Column(Modifier.fillMaxSize().background(colors.surface).padding(24.dp)) {
-        Text("Current Queue", color = colors.text, fontSize = 20.sp, fontWeight = FontWeight(700))
-        Spacer(Modifier.size(12.dp))
-        Text("Coming in Phase 10.", color = colors.text3, fontSize = 14.sp)
     }
 }
 
