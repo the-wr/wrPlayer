@@ -6,15 +6,18 @@ roadmap in `C:\Users\Wr\.claude\plans\create-a-plan-to-jolly-squirrel.md`, the s
 
 ## TL;DR — where we are
 
-Building wrPlayer (local Android MP3 player, Sort + Play modes) phase-by-phase with verification
-gates. **Phases 0–8 are done, committed, and verified. Phases 9 and 10 are built and verified live
-on device (awaiting visual sign-off, not yet committed). Phase 11 is next.**
+Built wrPlayer (local Android MP3 player, Sort + Play modes) phase-by-phase with verification gates.
+**All phases 0–11 are done. Phases 0–10 are committed; Phase 11 (integration hardening) is built,
+unit-tested, and smoke-tested, pending its commit. The MVP is feature-complete.**
 
-- **The app runs end-to-end in Sort Mode today**: empty-inbox → seed/picker → queue → playback →
-  +1/−1 voting, all live on the Pixel_9 emulator.
-- **66 JVM unit tests (18 classes) + 4 instrumented tests pass.** All three high-risk platform
-  bridges (ID3-over-SAF, TarsosDSP BPM, Media3) are proven on the real device.
-- Working tree is clean (committed). 77 Kotlin source files under `android/app/src/main`.
+- **Full loop runs on device**: add watched folder (SAF) → background scan → inbox → Sort Mode
+  (vote → tag sheet → promote/move) → Play Mode → Queue Editor builds a queue → Current Queue
+  reorder/remove → restart restores the queue. All live on the Pixel_9 emulator.
+- **81 JVM unit tests + 4 instrumented tests pass.** `assembleDebug` and `assembleRelease` (lintVital
+  clean) both build. The three high-risk platform bridges (ID3-over-SAF, TarsosDSP BPM, Media3) are
+  proven on the real device.
+- Only polish remains (see Known gaps): in-app album art via Coil; optional instrumented end-to-end
+  edge-case scripts (the edge-case *logic* is already JVM/Robolectric-tested).
 
 ## Build / run / test — the workflow that works
 
@@ -128,9 +131,11 @@ DB, with `track_tags` rebuilt in the same transaction). Hilt throughout; `@HiltV
 - `ui/AppShellViewModel` + rewritten `WrApp`: resolves the launch route via `DefaultMode` (no folders → Settings overlay; else Play), kicks the on-open reconcile walk, hosts the Settings overlay (gear / back-dismiss).
 - **Open visual nits for sign-off:** drag-reorder is a live single-step move (finger doesn't pixel-track the row); no per-row duration in the queue rows (we don't cache duration); removing a watched folder leaves its tracks' rows until they're confirmed-absent under a *reachable* tree (orphan rows possible — acceptable per §8.2 guard, revisit in Phase 11 if undesired).
 
-### Phase 11 — Integration hardening
-- Full loop on device; edge cases: unmounted/empty-folder guard, external-edit preserved across scan, queued-track-removed-mid-play skip (§6.1). `assembleRelease` builds.
-- **Remove temp code:** `SortViewModel.seedDemoInbox()` + the "Seed demo tracks" empty-state button → real "add a watched folder" guidance.
+### Phase 11 notes (built — pending commit)
+- **§6.1 queued-track-removed skip:** pure `domain/QueuePruner` (drops removed non-current queue entries, descending; never the playing one) + `QueuePrunerTest`. `TrackDao.observeAllUris()` feeds a `PlayViewModel` collector that prunes via `PlayerConnection.removeItem`. `PlayerConnection.onPlayerError` skips forward when a queued file is gone.
+- **Removed the seed hack:** `SortViewModel.seedDemoInbox()` deleted; the empty-inbox Sort state now reads "Add a watched folder in Settings…" with a primary button that opens Settings (`onOpenSettings`).
+- **Edge-case guards (already present, re-confirmed):** unmounted/empty-folder guard in `LibraryReconciler` (only enumerated reachable trees are eligible for removal); external-edit-preserved in `TrackMapping.buildUpdate` (keeps `sort_score`/`bpm_detected`). Both unit-tested in `LibraryReconcilerTest`.
+- `assembleRelease` builds clean (minify off; lintVital passes). Smoke-tested on device: launch restores the queue without the prune collector wrongly dropping it.
 
 ## Key decisions & deviations (so they aren't "fixed" by mistake)
 
@@ -140,10 +145,11 @@ DB, with `track_tags` rebuilt in the same transaction). Hilt throughout; `@HiltV
 - **SAF behind seams**; real-SAF enumeration/move/delete is the main thing not yet exercised on device.
 - **Config cache OFF** (AGP 8.7 bug) — don't re-enable without testing. JDK 21 pinned (system default is JDK 25, unsupported).
 
-## Known gaps / deferred
+## Known gaps / deferred (post-MVP polish)
 - In-app **album art not loaded** (placeholder music-note); the media *notification* shows real art. Add Coil loading from the document URI for the in-app cover.
 - Audio-focus auto-resume nuance (Media3 default may resume after transient loss; PRD §6.1 says "Android default", so acceptable).
-- Queued-track-removed-mid-play skip (§6.1) to implement in Play Mode.
+- Optional: scripted **instrumented** end-to-end happy-path + edge-case tests (Phase 11 gate suggested these; the edge-case logic is already covered by JVM/Robolectric unit tests, and the happy path was manually walked through on device).
+- Removing a watched folder leaves its tracks' rows until confirmed-absent under a reachable tree (orphan rows possible; acceptable per §8.2). Revisit if undesired.
 
 ## Pointers
 - Roadmap/plan: `C:\Users\Wr\.claude\plans\create-a-plan-to-jolly-squirrel.md`

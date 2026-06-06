@@ -29,6 +29,19 @@ class PlayerConnection @Inject constructor(
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = pushState()
+
+        /**
+         * A queued file that vanished from disk fails to load (PRD §6.1): skip to the next entry and
+         * keep going rather than surfacing an error and stopping the queue.
+         */
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            val c = controller ?: return
+            if (c.hasNextMediaItem()) {
+                c.seekToNextMediaItem()
+                c.prepare()
+                c.play()
+            }
+        }
     }
 
     /** Connect to the session service; safe to call repeatedly. */

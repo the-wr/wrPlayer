@@ -249,27 +249,6 @@ class SortViewModel @Inject constructor(
         }
     }
 
-    /** TEMPORARY: seed inbox rows for fixtures pushed to the app's external dir, for verification. */
-    fun seedDemoInbox() {
-        viewModelScope.launch {
-            val dir = context.getExternalFilesDir(null)
-            listOf("sample1.mp3", "sample2.mp3").forEach { name ->
-                val f = File(dir, name)
-                if (f.exists()) {
-                    trackDao.upsertWithTags(
-                        TrackEntity(
-                            documentUri = Uri.fromFile(f).toString(),
-                            filePath = f.absolutePath,
-                            status = "inbox",
-                            fileMtime = f.lastModified(),
-                        ),
-                    )
-                }
-            }
-            enter()
-        }
-    }
-
     private fun copyToCache(uri: String): File? = try {
         val temp = File.createTempFile("wr-bpm", ".mp3", context.cacheDir)
         context.contentResolver.openInputStream(Uri.parse(uri))!!.use { input ->

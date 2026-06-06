@@ -10,6 +10,7 @@ import com.wrplayer.data.playback.QueueTrack
 import com.wrplayer.data.playback.toMediaItem
 import com.wrplayer.data.prefs.AppPreferences
 import com.wrplayer.data.repo.TrackRepository
+import com.wrplayer.domain.QueuePruner
 import com.wrplayer.domain.model.TagDimension
 import com.wrplayer.ui.nowplaying.NowPlayingUi
 import com.wrplayer.ui.tagsheet.TagSheetLoader
@@ -103,6 +104,20 @@ class PlayViewModel @Inject constructor(
                 if (++positionSaveTick % 6 == 0 && _state.value.queueCount > 0) {
                     prefs.queuePositionMs = player.currentPositionMs()
                 }
+            }
+        }
+        // Drop queue entries whose DB row was removed by a reconciliation walk (PRD §6.1); the
+        // currently playing track is kept and finishes from its open handle.
+        viewModelScope.launch {
+            trackDao.observeAllUris().collect { uris ->
+                val ps = player.state.value
+                if (ps.queueSize == 0) return@collect
+                val removals = QueuePruner.indicesToRemove(
+                    queueMediaIds = ps.queue.map { it.mediaId },
+                    existingUris = uris.toSet(),
+                    currentIndex = ps.currentIndex,
+                )
+                removals.forEach { player.removeItem(it) }
             }
         }
     }

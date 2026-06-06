@@ -70,6 +70,10 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE status = 'library' AND (artist = :artist OR album = :album)")
     suspend fun matchingLibraryTracks(artist: String?, album: String?): List<TrackEntity>
 
+    /** All track document URIs — used to prune Play Mode queue entries whose row was removed (§6.1). */
+    @Query("SELECT document_uri FROM tracks")
+    fun observeAllUris(): Flow<List<String>>
+
     @Query("SELECT COUNT(*) FROM tracks WHERE status = 'inbox'")
     fun observeInboxCount(): Flow<Int>
 

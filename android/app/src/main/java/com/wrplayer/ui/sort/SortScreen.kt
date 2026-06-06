@@ -56,7 +56,7 @@ fun SortScreen(
         val np = state.nowPlaying
         when {
             state.phase == SortPhase.END ->
-                EndState(state.emptyInbox, topBar, onReenter = viewModel::enter, onSwitchToPlay = { onModeChange(AppMode.PLAY) }, onSeed = viewModel::seedDemoInbox)
+                EndState(state.emptyInbox, topBar, onReenter = viewModel::enter, onSwitchToPlay = { onModeChange(AppMode.PLAY) }, onOpenSettings = onOpenSettings)
 
             np != null ->
                 NowPlayingScreen(
@@ -120,7 +120,7 @@ private fun EndState(
     topBar: @Composable () -> Unit,
     onReenter: () -> Unit,
     onSwitchToPlay: () -> Unit,
-    onSeed: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val colors = WrTheme.colors
     Column(Modifier.fillMaxSize()) {
@@ -140,12 +140,14 @@ private fun EndState(
             )
             androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
             Text(
-                if (emptyInbox) "Add files to a watched folder, or seed demo tracks." else "You worked through this sort queue.",
+                if (emptyInbox) "Add a watched folder in Settings to start filling the inbox." else "You worked through this sort queue.",
                 color = colors.text2, fontSize = 14.sp, textAlign = TextAlign.Center,
             )
             androidx.compose.foundation.layout.Spacer(Modifier.size(28.dp))
-            PrimaryButton(if (emptyInbox) "Seed demo tracks" else "Re-enter Sort Mode") {
-                if (emptyInbox) onSeed() else onReenter()
+            if (emptyInbox) {
+                PrimaryButton("Add a watched folder", onOpenSettings)
+            } else {
+                PrimaryButton("Re-enter Sort Mode", onReenter)
             }
             androidx.compose.foundation.layout.Spacer(Modifier.size(10.dp))
             SecondaryButton("Switch to Play Mode", onSwitchToPlay)
